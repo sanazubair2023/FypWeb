@@ -1,0 +1,62 @@
+@model Fyp_Backend.Models.Worker
+@{
+    ViewData["Title"] = "My Location";
+    bool hasLoc = Model.Latitude.HasValue && Model.Longitude.HasValue;
+    var ci = System.Globalization.CultureInfo.InvariantCulture;
+}
+
+<div class="page-head">
+    <h1>My Location</h1>
+    <p>Set your base location. It determines part-time vs full-time matching with clients.</p>
+</div>
+
+<div class="row g-3 justify-content-center">
+    <div class="col-lg-9">
+        <div class="card-soft"><div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnLocate"><i class="bi bi-crosshair me-1"></i>Use my current location</button>
+                <span class="text-muted small" id="coordText">
+                    @(hasLoc ? $"Current: {Model.Latitude!.Value.ToString("F5", ci)}, {Model.Longitude!.Value.ToString("F5", ci)}" : "No location saved yet.")
+                </span>
+            </div>
+            <div id="workerMap" class="map-box mb-3"></div>
+            <button type="button" class="btn btn-primary w-100" id="saveLoc" disabled><i class="bi bi-save me-1"></i>Save Location</button>
+        </div></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var picked = { lat: null, lng: null };
+            var saveBtn = document.getElementById('saveLoc');
+            var ctl = initPinMap({
+                elementId: 'workerMap',
+                @(hasLoc ? $"lat: {Model.Latitude!.Value.ToString("F6", ci)}, lng: {Model.Longitude!.Value.ToString("F6", ci)}," : "")
+                onPick: function (lat, lng) {
+                    picked.lat = lat; picked.lng = lng;
+                    document.getElementById('coordText').textContent = 'Selected: ' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+                    saveBtn.disabled = false;
+                }
+            });
+
+            document.getElementById('btnLocate').addEventListener('click', function () {
+                var b = this; b.disabled = true; b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Locating...';
+                getBrowserLocation().then(function (c) {
+                    ctl.setPoint(c.latitude, c.longitude);
+                    picked.lat = c.latitude; picked.lng = c.longitude;
+                    saveBtn.disabled = false;
+                }).catch(function (e) { alert(e); })
+                .finally(function () { b.disabled = false; b.innerHTML = '<i class="bi bi-crosshair me-1"></i>Use my current location'; });
+            });
+
+            saveBtn.addEventListener('click', async function () {
+                if (picked.lat == null) { alert('Please pick a location first.'); return; }
+                this.disabled = true; this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+                var res = await postJson('@Url.Action("UpdateLocation", "Worker")', { latitude: picked.lat, longitude: picked.lng });
+                if (res.ok) { this.innerHTML = '<i class="bi bi-check2 me-1"></i>Saved!'; }
+                else { alert('Could not save location.'); this.disabled = false; this.innerHTML = '<i class="bi bi-save me-1"></i>Save Location'; }
+            });
+        })();
+    </script>
+}

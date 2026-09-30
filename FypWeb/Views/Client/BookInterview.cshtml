@@ -1,0 +1,136 @@
+@model BookInterviewVM
+@{
+    ViewData["Title"] = "Book Interview";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerPicture);
+    string date = ViewBag.Date as string ?? DateTime.Today.ToString("yyyy-MM-dd");
+}
+
+<a asp-action="WorkerDetail" asp-route-id="@Model.WorkerId" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to profile</a>
+
+<div class="row g-3 justify-content-center">
+    <div class="col-lg-7">
+        <div class="card-soft"><div class="card-body">
+            <div class="d-flex align-items-center gap-3 mb-3">
+                @if (pic != null)
+                {
+                    <img src="@pic" class="avatar-round" alt="@Model.WorkerName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                    <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
+                }
+                else
+                {
+                    <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
+                }
+                <div>
+                    <h5 class="fw-bold mb-0">Interview with @Model.WorkerName</h5>
+                    <span class="chip @(Model.IsPartTime ? "chip-blue" : "chip-amber")">
+                        @(Model.IsPartTime ? "Part-Time" : "Full-Time") engagement
+                    </span>
+                </div>
+            </div>
+
+            <div class="alert @(Model.IsPartTime ? "alert-info" : "alert-warning") py-2 small">
+                <i class="bi bi-info-circle me-1"></i>
+                Distance @Model.DistanceKm km within a @Model.Radius km radius —
+                @if (Model.IsPartTime)
+                {
+                    <text>this is <strong>Part-Time</strong>. Please pick one of the worker's available time slots.</text>
+                }
+                else
+                {
+                    <text>this is <strong>Full-Time</strong> (live-in). Indicate if residence is provided.</text>
+                }
+            </div>
+
+            <form asp-action="BookInterview" method="post" id="bookForm">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="workerId" value="@Model.WorkerId" />
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Interview Date</label>
+                    <input type="date" name="interviewDate" id="dateInput" value="@date" min="@DateTime.Today.ToString("yyyy-MM-dd")" class="form-control" required />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Address</label>
+                    <textarea name="address" class="form-control" rows="2" placeholder="Where should the interview take place?">@Model.ClientAddress</textarea>
+                </div>
+
+                @if (Model.IsPartTime)
+                {
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Available Time Slots</label>
+                        @if (!Model.HasSlots)
+                        {
+                            <div class="alert alert-secondary py-2 small mb-0">This worker has not published any time slots yet.</div>
+                        }
+                        else
+                        {
+                            <input type="hidden" name="slotId" id="slotIdField" />
+                            <div class="row g-2">
+                                @foreach (var s in Model.Slots)
+                                {
+                                    <div class="col-6 col-md-4">
+                                        <div class="slot-pill @(s.IsTaken ? "taken" : "")"
+                                             data-id="@s.Id" data-taken="@s.IsTaken.ToString().ToLower()">
+                                            <i class="bi bi-clock me-1"></i>@s.StartTime - @s.EndTime
+                                            @if (s.IsTaken)
+                                            {
+                                                <div class="small text-danger">Booked</div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            <div class="form-text" id="slotHint">Select an open slot.</div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="isResidenceProvided" value="true" id="resSwitch" />
+                        <label class="form-check-label fw-semibold" for="resSwitch">Residence / accommodation provided</label>
+                    </div>
+                }
+
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold"
+                        @(Model.IsPartTime && !Model.HasSlots ? "disabled" : "")>
+                    <i class="bi bi-send me-1"></i>Send Interview Request
+                </button>
+            </form>
+        </div></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var dateInput = document.getElementById('dateInput');
+            if (dateInput) {
+                dateInput.addEventListener('change', function () {
+                    // reload slot availability for the chosen date
+                    window.location.href = '@Url.Action("BookInterview", "Client")?workerId=@Model.WorkerId&date=' + this.value;
+                });
+            }
+
+            var slotField = document.getElementById('slotIdField');
+            document.querySelectorAll('.slot-pill').forEach(function (pill) {
+                if (pill.getAttribute('data-taken') === 'true') return;
+                pill.addEventListener('click', function () {
+                    document.querySelectorAll('.slot-pill').forEach(function (p) { p.classList.remove('selected'); });
+                    pill.classList.add('selected');
+                    if (slotField) slotField.value = pill.getAttribute('data-id');
+                    var h = document.getElementById('slotHint');
+                    if (h) h.textContent = 'Slot selected ✔';
+                });
+            });
+
+            var form = document.getElementById('bookForm');
+            if (form && slotField !== null) {
+                form.addEventListener('submit', function (e) {
+                    if (!slotField.value) { e.preventDefault(); alert('Please select a time slot.'); }
+                });
+            }
+        })();
+    </script>
+}

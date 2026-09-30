@@ -1,0 +1,80 @@
+@model List<CompanyWorkerVM>
+@{
+    ViewData["Title"] = "Worker Directory";
+    string search = ViewBag.Search as string ?? "";
+    string companyName = ViewBag.CompanyName as string ?? "Company";
+}
+
+<div class="page-head">
+    <h1>Worker Directory</h1>
+    <p>@companyName — browse workers and issue skill certifications.</p>
+</div>
+
+<div class="card-soft mb-4"><div class="card-body">
+    <form method="get" asp-action="Directory" class="row g-2">
+        <div class="col-md-9">
+            <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="text" name="search" value="@search" class="form-control" placeholder="Search worker by name" />
+            </div>
+        </div>
+        <div class="col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-grow-1">Search</button>
+            <a asp-action="Directory" class="btn btn-outline-secondary">Reset</a>
+        </div>
+    </form>
+</div></div>
+
+<p class="text-muted mb-3">@Model.Count worker(s).</p>
+
+@if (!Model.Any())
+{
+    <div class="card-soft"><div class="empty-state">
+        <i class="bi bi-people"></i>
+        <h5 class="mt-3">No workers found</h5>
+    </div></div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var w in Model)
+        {
+            var pic = FypWeb.Helpers.ViewHelpers.Pic(w.Picture);
+            <div class="col-md-6 col-xl-4">
+                <div class="card-soft worker-card h-100"><div class="card-body d-flex flex-column">
+                    <div class="wc-top">
+                        @if (pic != null)
+                        {
+                            <img src="@pic" class="wc-avatar" alt="@w.Name" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                            <div class="wc-avatar-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(w.Name)</div>
+                        }
+                        else
+                        {
+                            <div class="wc-avatar-fallback">@FypWeb.Helpers.ViewHelpers.Initial(w.Name)</div>
+                        }
+                        <div>
+                            <div class="fw-bold">@w.Name</div>
+                            <div class="text-muted small">@w.RoleTitle</div>
+                            <div class="stars mt-1"><i class="bi bi-star-fill"></i> <span class="text-dark fw-semibold">@w.Rating</span></div>
+                        </div>
+                    </div>
+                    <div class="mt-3 small text-muted">
+                        <div><i class="bi bi-geo-alt me-1"></i>@w.Location</div>
+                        <div><i class="bi bi-cash-coin me-1"></i>@w.Salary</div>
+                    </div>
+                    <div class="mt-2 d-flex flex-wrap gap-1">
+                        @foreach (var c in w.Categories.Take(3))
+                        {
+                            <span class="chip chip-blue">@c</span>
+                        }
+                    </div>
+                    <div class="mt-auto pt-3">
+                        <a asp-action="WorkerDetail" asp-route-id="@w.WorkerId" class="btn btn-primary w-100">
+                            <i class="bi bi-award me-1"></i>View &amp; Certify
+                        </a>
+                    </div>
+                </div></div>
+            </div>
+        }
+    </div>
+}

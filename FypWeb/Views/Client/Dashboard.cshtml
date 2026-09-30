@@ -1,0 +1,428 @@
+@model List<InterviewRequestVM>
+@{
+    ViewData["Title"] = "Dashboard";
+    int hiredCount = ViewBag.HiredCount ?? 0;
+    int pendingCount = ViewBag.PendingCount ?? 0;
+
+    var activeList = Model.Where(w => w.Status == "On Work" || w.Status == "Pending Resignation").ToList();
+    var pastList = Model.Where(w => w.Status == "Resigned" || w.Status == "Terminated").ToList();
+
+    var hour = System.DateTime.Now.Hour;
+    var greeting = hour < 12 ? "GOOD MORNING" : hour < 17 ? "GOOD AFTERNOON" : "GOOD EVENING";
+}
+
+<div class="ud-hero card-soft mb-4">
+    <div>
+        <div class="ud-greeting">@greeting</div>
+        <h1 class="ud-name">@User.GetDisplayName()</h1>
+        <p class="text-muted mb-0">Here's an overview of your household staff and hiring activity.</p>
+    </div>
+    <div class="ud-hero-avatar">@FypWeb.Helpers.ViewHelpers.Initial(User.GetDisplayName())</div>
+</div>
+
+@* ---- Quick access grid (RN 4-card grid) ---- *@
+<div class="row g-3 mb-4 ud-quick">
+    <div class="col-6 col-lg-3">
+        <a asp-action="FindService" class="qa-card" style="--qa-bg:#EBF8FF;--qa-fg:#2B6CB0;">
+            <div class="qa-icon"><i class="bi bi-search"></i></div>
+            <div class="qa-title">Services</div>
+            <div class="qa-sub">Find & hire workers</div>
+        </a>
+    </div>
+    <div class="col-6 col-lg-3">
+        <a asp-action="ActiveRequests" class="qa-card" style="--qa-bg:#FEFCBF;--qa-fg:#B7791F;">
+            <div class="qa-icon">
+                <i class="bi bi-chat-left-dots"></i>
+                @if (pendingCount > 0)
+                {
+                    <span class="qa-dot"></span>
+                }
+            </div>
+            <div class="qa-title">Interviews</div>
+            <div class="qa-sub">@(pendingCount > 0 ? $"{pendingCount} pending" : "Requests & replies")</div>
+        </a>
+    </div>
+    <div class="col-6 col-lg-3">
+        <a asp-action="WorkerDecisions" class="qa-card" style="--qa-bg:#E6FFFA;--qa-fg:#2C7A7B;">
+            <div class="qa-icon"><i class="bi bi-briefcase"></i></div>
+            <div class="qa-title">Job Requests</div>
+            <div class="qa-sub">Worker decisions</div>
+        </a>
+    </div>
+    <div class="col-6 col-lg-3">
+        <a asp-action="Resignations" class="qa-card" style="--qa-bg:#FFF5F5;--qa-fg:#C53030;">
+            <div class="qa-icon"><i class="bi bi-box-arrow-right"></i></div>
+            <div class="qa-title">Resignations</div>
+            <div class="qa-sub">Review & confirm</div>
+        </a>
+    </div>
+</div>
+
+@* ---- Segment tabs (Overview | Active | Past) ---- *@
+<div class="ud-tabs" role="tablist">
+    <button class="ud-tab active" data-tab="Overview" type="button">Overview</button>
+    <button class="ud-tab" data-tab="Active" type="button">Active <span class="ud-count">@activeList.Count</span></button>
+    <button class="ud-tab" data-tab="Past" type="button">Past <span class="ud-count">@pastList.Count</span></button>
+</div>
+
+@* ===== Overview pane ===== *@
+<div class="ud-pane" data-pane="Overview">
+    <div class="row g-3">
+        <div class="col-sm-6">
+            <div class="ov-card" style="--ov:#3182CE;">
+                <div class="ov-top">
+                    <div class="ov-icon"><i class="bi bi-people-fill"></i></div>
+                    <span class="ov-tag ov-tag-live">Live</span>
+                </div>
+                <div class="ov-num">@hiredCount</div>
+                <div class="ov-label">Active Workers</div>
+            </div>
+        </div>
+        <div class="col-sm-6">
+            <div class="ov-card" style="--ov:#DD6B20;">
+                <div class="ov-top">
+                    <div class="ov-icon"><i class="bi bi-hourglass-split"></i></div>
+                    <span class="ov-tag ov-tag-pending">Pending</span>
+                </div>
+                <div class="ov-num">@pendingCount</div>
+                <div class="ov-label">Interview Requests</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ===== Active pane ===== *@
+<div class="ud-pane d-none" data-pane="Active">
+    @if (!activeList.Any())
+    {
+        <div class="card-soft">
+            <div class="empty-state">
+                <i class="bi bi-people"></i>
+                <h5 class="mt-3">No active workers</h5>
+                <p>Start by finding and hiring a trusted worker.</p>
+                <a asp-action="FindService" class="btn btn-primary"><i class="bi bi-search me-1"></i>Find a Worker</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var w in activeList)
+            {
+                @await Html.PartialAsync("_WorkerDashCard", w)
+            }
+        </div>
+    }
+</div>
+
+@* ===== Past pane ===== *@
+<div class="ud-pane d-none" data-pane="Past">
+    @if (!pastList.Any())
+    {
+        <div class="card-soft">
+            <div class="empty-state">
+                <i class="bi bi-clock-history"></i>
+                <h5 class="mt-3">No past records</h5>
+                <p>Workers you terminate or who resign will appear here.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var w in pastList)
+            {
+                @await Html.PartialAsync("_WorkerDashCard", w)
+            }
+        </div>
+    }
+</div>
+
+@section Styles {
+    <style>
+        .ud-hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.25rem 1.5rem;
+        }
+
+        .ud-greeting {
+            font-size: .72rem;
+            font-weight: 800;
+            letter-spacing: .12em;
+            color: #94A3B8;
+        }
+
+        .ud-name {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin: .1rem 0 .35rem;
+            color: #0F172A;
+        }
+
+        .ud-hero-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: #EAF2FF;
+            color: #1E64D3;
+            display: grid;
+            place-items: center;
+            font-weight: 800;
+            font-size: 1.35rem;
+            flex: 0 0 auto;
+        }
+
+        .qa-card {
+            display: block;
+            text-decoration: none;
+            background: #fff;
+            border: 1px solid #E8EDF5;
+            border-radius: 18px;
+            padding: 1rem;
+            height: 100%;
+            transition: transform .12s ease, box-shadow .12s ease;
+            color: #0F172A;
+        }
+
+            .qa-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(15,23,42,.08);
+            }
+
+        .qa-icon {
+            position: relative;
+            width: 46px;
+            height: 46px;
+            border-radius: 14px;
+            background: var(--qa-bg);
+            color: var(--qa-fg);
+            display: grid;
+            place-items: center;
+            font-size: 1.25rem;
+            margin-bottom: .6rem;
+        }
+
+        .qa-dot {
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #F97316;
+            border: 2px solid #fff;
+        }
+
+        .qa-title {
+            font-weight: 800;
+            font-size: .98rem;
+        }
+
+        .qa-sub {
+            font-size: .78rem;
+            color: #94A3B8;
+        }
+
+        .ud-tabs {
+            display: inline-flex;
+            background: #EEF2F7;
+            border-radius: 14px;
+            padding: 4px;
+            gap: 4px;
+            margin-bottom: 1.1rem;
+        }
+
+        .ud-tab {
+            border: 0;
+            background: transparent;
+            border-radius: 11px;
+            padding: .5rem 1.05rem;
+            font-weight: 700;
+            font-size: .9rem;
+            color: #64748B;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+        }
+
+            .ud-tab.active {
+                background: #fff;
+                color: #1E64D3;
+                box-shadow: 0 1px 4px rgba(15,23,42,.08);
+            }
+
+        .ud-count {
+            background: #E2E8F0;
+            color: #475569;
+            border-radius: 8px;
+            font-size: .72rem;
+            padding: 0 .4rem;
+            font-weight: 800;
+        }
+
+        .ud-tab.active .ud-count {
+            background: #EAF2FF;
+            color: #1E64D3;
+        }
+
+        .ov-card {
+            background: #fff;
+            border: 1px solid #E8EDF5;
+            border-radius: 18px;
+            padding: 1.25rem;
+            height: 100%;
+        }
+
+        .ov-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: .75rem;
+        }
+
+        .ov-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 13px;
+            background: color-mix(in srgb, var(--ov) 12%, #fff);
+            color: var(--ov);
+            display: grid;
+            place-items: center;
+            font-size: 1.2rem;
+        }
+
+        .ov-tag {
+            font-size: .68rem;
+            font-weight: 800;
+            padding: .2rem .55rem;
+            border-radius: 8px;
+            letter-spacing: .03em;
+        }
+
+        .ov-tag-live {
+            background: #DCFCE7;
+            color: #166534;
+        }
+
+        .ov-tag-pending {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+
+        .ov-num {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #0F172A;
+            line-height: 1;
+        }
+
+        .ov-label {
+            font-size: .85rem;
+            color: #64748B;
+            margin-top: .25rem;
+        }
+
+        .wdc {
+            background: #fff;
+            border: 1px solid #E8EDF5;
+            border-radius: 18px;
+            padding: 14px;
+            height: 100%;
+        }
+
+        .wdc-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .wdc-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #EAF2FF;
+            flex: 0 0 auto;
+        }
+
+        .wdc-avatar-fb {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #EAF2FF;
+            color: #1E64D3;
+            display: grid;
+            place-items: center;
+            font-weight: 800;
+            flex: 0 0 auto;
+        }
+
+        .wdc-name {
+            font-weight: 800;
+            color: #0F172A;
+        }
+
+        .wdc-caption {
+            font-size: .75rem;
+            color: #94A3B8;
+        }
+
+        .wdc-chiprow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .wdc-loc {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+            font-size: .82rem;
+            color: #64748B;
+        }
+
+            .wdc-loc i {
+                color: #EC4899;
+            }
+
+        .wdc-divider {
+            height: 1px;
+            background: #EEF2F7;
+            margin: 12px 0 10px;
+        }
+
+        .wdc-foot {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .wdc-rid {
+            font-size: .72rem;
+            color: #94A3B8;
+            font-weight: 600;
+        }
+    </style>
+}
+
+@section Scripts {
+    <script>
+        (function () {
+            const tabs = document.querySelectorAll('.ud-tab');
+            const panes = document.querySelectorAll('.ud-pane');
+            tabs.forEach(t => t.addEventListener('click', function () {
+                tabs.forEach(x => x.classList.remove('active'));
+                this.classList.add('active');
+                const name = this.dataset.tab;
+                panes.forEach(p => p.classList.toggle('d-none', p.dataset.pane !== name));
+            }));
+        })();
+    </script>
+}

@@ -1,0 +1,61 @@
+﻿@model InterviewRequestVM
+@{
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.OtherPartyPicture);
+    var isPast = Model.Status == "Resigned" || Model.Status == "Terminated";
+    var caption = isPast ? "Contract closed" : "Working with you";
+    var pill = Model.Status switch
+    {
+        "On Work" => "chip-green",
+        "Pending Resignation" => "chip-amber",
+        "Resigned" => "chip-amber",
+        "Terminated" => "chip-red",
+        _ => "chip-blue"
+    };
+}
+<div class="col-md-6 col-xl-4">
+    <div class="wdc">
+        <div class="wdc-head">
+            @if (pic != null)
+            {
+                <img src="@pic" class="wdc-avatar" alt="@Model.OtherPartyName"
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                <div class="wdc-avatar-fb" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.OtherPartyName)</div>
+            }
+            else
+            {
+                <div class="wdc-avatar-fb">@FypWeb.Helpers.ViewHelpers.Initial(Model.OtherPartyName)</div>
+            }
+            <div class="flex-grow-1">
+                <div class="wdc-name">@Model.OtherPartyName</div>
+                <div class="wdc-caption">@caption</div>
+            </div>
+            <span class="chip @pill">@Model.Status</span>
+        </div>
+
+        <div class="wdc-chiprow">
+            <span class="chip chip-blue"><i class="bi bi-briefcase me-1"></i>@Model.JobType</span>
+            @if (Model.JobType == "Part-Time" && !string.IsNullOrEmpty(Model.SlotStart))
+            {
+                <span class="chip chip-gray"><i class="bi bi-clock me-1"></i>@Model.SlotStart&nbsp;–&nbsp;@Model.SlotEnd</span>
+            }
+        </div>
+
+        <div class="wdc-loc">
+            <i class="bi bi-geo-alt-fill"></i>
+            <span class="text-truncate">@Model.Location</span>
+        </div>
+
+        <div class="wdc-divider"></div>
+
+        <div class="wdc-foot">
+            <span class="wdc-rid"><i class="bi bi-hash"></i>Record @Model.InterviewId</span>
+            <div class="d-flex gap-2">
+                <a asp-action="WorkerDetail" asp-route-id="@Model.OtherPartyId" class="btn btn-outline-primary btn-sm">View</a>
+                @if (Model.Status == "On Work")
+                {
+                    <a asp-action="Terminate" asp-route-interviewId="@Model.InterviewId" class="btn btn-outline-danger btn-sm">Terminate</a>
+                }
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,39 @@
+@{
+    var role = User?.GetRole() ?? "";
+    var ctx = ViewContext.RouteData.Values;
+    string ctrl = ctx["controller"]?.ToString() ?? "";
+    string act = ctx["action"]?.ToString() ?? "";
+    Func<string, string, string> active = (c, a) =>
+        (string.Equals(ctrl, c, StringComparison.OrdinalIgnoreCase) &&
+         string.Equals(act, a, StringComparison.OrdinalIgnoreCase)) ? "active" : "";
+}
+
+@if (role == "Client")
+{
+    <a class="nav-link @active("Client", "Dashboard")" asp-controller="Client" asp-action="Dashboard"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
+    <a class="nav-link @active("Client", "FindService")" asp-controller="Client" asp-action="FindService"><i class="bi bi-search"></i><span>Find a Worker</span></a>
+    <a class="nav-link @active("Client", "Location")" asp-controller="Client" asp-action="Location"><i class="bi bi-geo-alt-fill"></i><span>Map &amp; Location</span></a>
+    <a class="nav-link @active("Client", "ActiveRequests")" asp-controller="Client" asp-action="ActiveRequests"><i class="bi bi-hourglass-split"></i><span>Active Requests</span></a>
+    <a class="nav-link @active("Client", "WorkerDecisions")" asp-controller="Client" asp-action="WorkerDecisions"><i class="bi bi-clipboard-check"></i><span>Hiring Decisions</span></a>
+    <a class="nav-link @active("Client", "Resignations")" asp-controller="Client" asp-action="Resignations"><i class="bi bi-file-earmark-person"></i><span>Resignations</span></a>
+    <a class="nav-link @active("Client", "Profile")" asp-controller="Client" asp-action="Profile"><i class="bi bi-person-circle"></i><span>My Profile</span></a>
+}
+else if (role == "Worker")
+{
+    <a class="nav-link @active("Worker", "Dashboard")" asp-controller="Worker" asp-action="Dashboard"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
+    <a class="nav-link @active("Worker", "Requests")" asp-controller="Worker" asp-action="Requests"><i class="bi bi-inbox-fill"></i><span>Interview Requests</span></a>
+    <a class="nav-link @active("Worker", "AcceptedRequests")" asp-controller="Worker" asp-action="AcceptedRequests"><i class="bi bi-calendar-check"></i><span>Accepted Interviews</span></a>
+    <a class="nav-link @active("Worker", "JobConfirmations")" asp-controller="Worker" asp-action="JobConfirmations"><i class="bi bi-briefcase-fill"></i><span>Job Offers</span></a>
+    <a class="nav-link @active("Worker", "Habits")" asp-controller="Worker" asp-action="Habits"><i class="bi bi-stars"></i><span>My Habits</span></a>
+    <a class="nav-link @active("Worker", "Location")" asp-controller="Worker" asp-action="Location"><i class="bi bi-geo-alt-fill"></i><span>My Location</span></a>
+    <a class="nav-link @active("Worker", "LeaveJob")" asp-controller="Worker" asp-action="LeaveJob"><i class="bi bi-door-open"></i><span>Leave Job</span></a>
+    <a class="nav-link @active("Worker", "Termination")" asp-controller="Worker" asp-action="Termination"><i class="bi bi-exclamation-octagon"></i><span>Termination</span></a>
+}
+else if (role == "Company")
+{
+    <a class="nav-link @active("Company", "Directory")" asp-controller="Company" asp-action="Directory"><i class="bi bi-people-fill"></i><span>Worker Directory</span></a>
+}
+else if (role == "Police")
+{
+    <a class="nav-link @active("Police", "Portal")" asp-controller="Police" asp-action="Portal"><i class="bi bi-shield-check"></i><span>Verification Portal</span></a>
+}

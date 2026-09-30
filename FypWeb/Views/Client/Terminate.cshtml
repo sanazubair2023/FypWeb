@@ -1,0 +1,67 @@
+@{
+    ViewData["Title"] = "Terminate Contract";
+    int interviewId = ViewBag.InterviewId ?? 0;
+    string workerName = ViewBag.WorkerName as string ?? "Worker";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(ViewBag.WorkerPicture as string);
+}
+
+<a asp-action="Dashboard" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to dashboard</a>
+
+<div class="row g-3 justify-content-center">
+    <div class="col-lg-6">
+        <div class="card-soft"><div class="card-body">
+            <div class="text-center mb-3">
+                @if (pic != null)
+                {
+                    <img src="@pic" class="avatar-round mx-auto d-block" alt="@workerName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                    <div class="avatar-round-fallback mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(workerName)</div>
+                }
+                else
+                {
+                    <div class="avatar-round-fallback mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(workerName)</div>
+                }
+                <h5 class="fw-bold mt-2 mb-0">Terminate @workerName</h5>
+                <p class="text-muted small">This ends the contract permanently.</p>
+            </div>
+
+            <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>This action cannot be undone.</div>
+
+            <form asp-action="Terminate" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="interviewId" value="@interviewId" />
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Reason for termination</label>
+                    <select name="reason" class="form-select" required>
+                        <option value="">Select a reason</option>
+                        <option>Unsatisfactory performance</option>
+                        <option>Attendance / punctuality issues</option>
+                        <option>Behavioural concerns</option>
+                        <option>No longer required</option>
+                        <option>Other</option>
+                    </select>
+                </div>
+
+                <div class="mb-3 text-center">
+                    <label class="form-label fw-semibold d-block">Rate this worker</label>
+                    <div class="rating-input">
+                        @for (int i = 5; i >= 1; i--)
+                        {
+                            <input type="radio" name="rating" id="tr@(i)" value="@i" @(i == 3 ? "checked" : "") />
+                            <label for="tr@(i)"><i class="bi bi-star-fill"></i></label>
+                        }
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Remarks (optional)</label>
+                    <textarea name="remarks" class="form-control" rows="3" placeholder="Additional remarks"></textarea>
+                </div>
+
+                <button type="submit" class="btn btn-danger w-100" onclick="return confirm('Terminate this contract?');">
+                    <i class="bi bi-x-octagon me-1"></i>Terminate Contract
+                </button>
+            </form>
+        </div></div>
+    </div>
+</div>

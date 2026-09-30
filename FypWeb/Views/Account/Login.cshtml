@@ -1,0 +1,88 @@
+@model LoginViewModel
+@{
+    ViewData["Title"] = "Sign In";
+    Layout = "_AuthLayout";
+}
+
+<div class="auth-card">
+    <h2 class="mb-1">Welcome back 👋</h2>
+    <p class="text-muted mb-4">Sign in to your account to continue.</p>
+
+    <form asp-action="Login" method="post" id="loginForm">
+        @Html.AntiForgeryToken()
+
+        <label class="form-label fw-semibold">I am a</label>
+        <div class="role-tabs mb-3" id="roleTabs">
+            <button type="button" class="role-tab active" data-role="Client">Client</button>
+            <button type="button" class="role-tab" data-role="Worker">Worker</button>
+            <button type="button" class="role-tab" data-role="Company">Company</button>
+            <button type="button" class="role-tab" data-role="Police">Police</button>
+        </div>
+        <input type="hidden" asp-for="Role" id="roleField" value="Client" />
+
+        <div class="mb-3">
+            <label class="form-label fw-semibold" id="idLabel">Email</label>
+            <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-person"></i></span>
+                <input asp-for="EmailOrCnic" class="form-control" id="idInput" placeholder="you@example.com" autocomplete="username" required />
+            </div>
+            <div class="form-text" id="idHint">Sign in with your registered email address.</div>
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label fw-semibold">Password</label>
+            <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-lock"></i></span>
+                <input asp-for="Password" type="password" class="form-control" id="pwdInput" placeholder="••••••••" autocomplete="current-password" required />
+                <button class="btn btn-outline-secondary" type="button" id="togglePwd"><i class="bi bi-eye"></i></button>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+            <i class="bi bi-box-arrow-in-right me-1"></i> Sign In
+        </button>
+    </form>
+
+    <p class="text-center mt-4 mb-0 text-muted">
+        Don't have an account?
+        <a asp-action="Signup" class="text-brand fw-semibold">Create one</a>
+    </p>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var tabs = document.querySelectorAll('#roleTabs .role-tab');
+            var roleField = document.getElementById('roleField');
+            var idLabel = document.getElementById('idLabel');
+            var idInput = document.getElementById('idInput');
+            var idHint = document.getElementById('idHint');
+
+            var cfg = {
+                Client:  { label: 'Email',            ph: 'you@example.com',      hint: 'Sign in with your registered email address.' },
+                Worker:  { label: 'CNIC',             ph: '37405-1234567-1',      hint: 'Workers sign in with their CNIC number.' },
+                Company: { label: 'License Number',   ph: 'LIC-000123',           hint: 'Agencies sign in with their license number.' },
+                Police:  { label: 'Badge / Service ID', ph: 'BADGE-4471',         hint: 'Officers sign in with their badge / service ID.' }
+            };
+
+            tabs.forEach(function (t) {
+                t.addEventListener('click', function () {
+                    tabs.forEach(function (x) { x.classList.remove('active'); });
+                    t.classList.add('active');
+                    var r = t.getAttribute('data-role');
+                    roleField.value = r;
+                    idLabel.textContent = cfg[r].label;
+                    idInput.placeholder = cfg[r].ph;
+                    idHint.textContent = cfg[r].hint;
+                });
+            });
+
+            document.getElementById('togglePwd').addEventListener('click', function () {
+                var p = document.getElementById('pwdInput');
+                var icon = this.querySelector('i');
+                if (p.type === 'password') { p.type = 'text'; icon.className = 'bi bi-eye-slash'; }
+                else { p.type = 'password'; icon.className = 'bi bi-eye'; }
+            });
+        })();
+    </script>
+}

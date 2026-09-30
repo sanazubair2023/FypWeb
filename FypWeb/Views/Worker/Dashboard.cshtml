@@ -1,0 +1,215 @@
+@model WorkerDashboardVM
+@{
+    ViewData["Title"] = "Dashboard";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+}
+
+<div class="page-head">
+    <h1>Hi, @Model.Name.Split(' ')[0] 👋</h1>
+    <p>Manage your availability, schedule and profile.</p>
+</div>
+
+<div class="row g-3">
+    <!-- Left: profile -->
+    <div class="col-lg-4">
+        <div class="card-soft mb-3"><div class="card-body text-center">
+            @if (pic != null)
+            {
+                <img src="@pic" class="detail-avatar mb-3" alt="@Model.Name" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                <div class="detail-avatar-fallback mb-3 mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+            }
+            else
+            {
+                <div class="detail-avatar-fallback mb-3 mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+            }
+            <h4 class="fw-bold mb-1">@Model.Name</h4>
+            <div class="stars mb-2">
+                @for (int i = 1; i <= 5; i++)
+                {
+                    <i class="bi @(i <= Math.Round(Model.Rating) ? "bi-star-fill" : "bi-star")"></i>
+                }
+                <span class="text-dark fw-semibold ms-1">@Model.Rating.ToString("F1")</span>
+                <span class="text-muted small">(@Model.ReviewCount)</span>
+            </div>
+            <div class="d-flex flex-wrap justify-content-center gap-1 mb-2">
+                @foreach (var c in Model.Categories)
+                {
+                    <span class="chip chip-blue">@c</span>
+                }
+            </div>
+            <hr />
+            <ul class="list-unstyled text-start small mb-0">
+                <li class="mb-2"><i class="bi bi-telephone me-2 text-brand"></i>@(Model.Phone ?? "N/A")</li>
+                <li class="mb-2"><i class="bi bi-person-badge me-2 text-brand"></i>@(Model.Cnic ?? "N/A")</li>
+                <li class="mb-2"><i class="bi bi-geo-alt me-2 text-brand"></i>@(Model.Address ?? "N/A")</li>
+                <li class="mb-2"><i class="bi bi-cash-coin me-2 text-brand"></i>@Model.Salary</li>
+                <li><i class="bi bi-gender-ambiguous me-2 text-brand"></i>@(Model.Gender ?? "N/A") @(Model.Age.HasValue ? $"· {Model.Age} yrs" : "")</li>
+            </ul>
+        </div></div>
+
+        <!-- Duty status -->
+        <div class="card-soft mb-3"><div class="card-body">
+            <h6 class="fw-bold">Availability</h6>
+            <div class="form-check form-switch fs-5">
+                <input class="form-check-input" type="checkbox" id="dutyToggle" @(Model.AvailableStatus ? "checked" : "") />
+                <label class="form-check-label fs-6" for="dutyToggle" id="dutyLabel">
+                    @(Model.AvailableStatus ? "On Duty — available for hire" : "Off Duty — hidden from search")
+                </label>
+            </div>
+        </div></div>
+
+        <!-- Radius -->
+        <div class="card-soft"><div class="card-body">
+            <h6 class="fw-bold">Service Radius</h6>
+            <p class="small text-muted">Clients within this radius get part-time offers; beyond it, full-time.</p>
+            <input type="range" class="form-range" min="1" max="70" value="@Model.Radius" id="radiusRange" />
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-bold text-brand"><span id="radiusVal">@Model.Radius</span> km</span>
+                <button class="btn btn-primary btn-sm" id="saveRadius">Save</button>
+            </div>
+        </div></div>
+    </div>
+
+    <!-- Right: schedule + bio + reviews -->
+    <div class="col-lg-8">
+        <div class="card-soft mb-3"><div class="card-body">
+            <h6 class="fw-bold"><i class="bi bi-clock me-1 text-brand"></i>Time Slots</h6>
+            <p class="small text-muted">Add the time windows you're available for part-time work.</p>
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-5"><label class="small fw-semibold">Start</label><input type="time" id="slotStart" class="form-control" /></div>
+                <div class="col-5"><label class="small fw-semibold">End</label><input type="time" id="slotEnd" class="form-control" /></div>
+                <div class="col-2"><button class="btn btn-primary w-100" id="addSlot"><i class="bi bi-plus-lg"></i></button></div>
+            </div>
+            <div id="slotList" class="d-flex flex-wrap gap-2">
+                @foreach (var s in Model.Slots)
+                {
+                    <span class="chip chip-blue" data-id="@s.Id">
+                        <i class="bi bi-clock me-1"></i>@s.StartTime - @s.EndTime
+                        <button type="button" class="del-slot" data-id="@s.Id" style="border:none;background:none;color:inherit;cursor:pointer;">&times;</button>
+                    </span>
+                }
+                @if (!Model.Slots.Any())
+                {
+                    <span class="text-muted small" id="noSlots">No time slots yet.</span>
+                }
+            </div>
+        </div></div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Bio))
+        {
+            <div class="card-soft mb-3"><div class="card-body">
+                <h6 class="fw-bold"><i class="bi bi-person-lines-fill me-1 text-brand"></i>About Me</h6>
+                <p class="mb-0 text-muted">@Model.Bio</p>
+            </div></div>
+        }
+
+        <div class="card-soft mb-3"><div class="card-body">
+            <h6 class="fw-bold"><i class="bi bi-briefcase me-1 text-brand"></i>Experience</h6>
+            @if (!Model.Experiences.Any())
+            {
+                <p class="text-muted mb-0">No experience listed.</p>
+            }
+            else
+            {
+                foreach (var e in Model.Experiences)
+                {
+                    <div class="border-start border-3 border-primary ps-3 mb-2">
+                        <div class="fw-semibold">@e.WorkAt <span class="text-muted fw-normal small">· @e.Duration</span></div>
+                        <div class="text-muted small">@e.ExpDetail</div>
+                    </div>
+                }
+            }
+        </div></div>
+
+        @if (Model.Habits.Any())
+        {
+            <div class="card-soft mb-3"><div class="card-body">
+                <h6 class="fw-bold"><i class="bi bi-stars me-1 text-brand"></i>My Habits</h6>
+                <div class="d-flex flex-wrap gap-1">
+                    @foreach (var h in Model.Habits)
+                    {
+                        <span class="chip chip-green">@h</span>
+                    }
+                </div>
+            </div></div>
+        }
+
+        <div class="card-soft"><div class="card-body">
+            <h6 class="fw-bold"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Reviews (@Model.ReviewCount)</h6>
+            @if (!Model.Reviews.Any())
+            {
+                <p class="text-muted mb-0">No reviews yet.</p>
+            }
+            else
+            {
+                foreach (var r in Model.Reviews)
+                {
+                    <div class="border-bottom py-2">
+                        <div class="d-flex justify-content-between">
+                            <span class="stars">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    <i class="bi @(i <= r.Rating ? "bi-star-fill" : "bi-star")"></i>
+                                }
+                            </span>
+                            <small class="text-muted">@r.ReviewDate · @r.ReviewerRole</small>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(r.Comment))
+                        {
+                            <div class="small mt-1">@r.Comment</div>
+                        }
+                    </div>
+                }
+            }
+        </div></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Duty toggle
+        document.getElementById('dutyToggle').addEventListener('change', async function () {
+            var on = this.checked;
+            var res = await postJson('@Url.Action("UpdateDutyStatus", "Worker")', { value: on });
+            if (res.ok) {
+                document.getElementById('dutyLabel').textContent = on ? 'On Duty — available for hire' : 'Off Duty — hidden from search';
+            } else { this.checked = !on; alert('Could not update status.'); }
+        });
+
+        // Radius
+        var range = document.getElementById('radiusRange');
+        range.addEventListener('input', function () { document.getElementById('radiusVal').textContent = this.value; });
+        document.getElementById('saveRadius').addEventListener('click', async function () {
+            var res = await postJson('@Url.Action("UpdateRadius", "Worker")', { value: parseInt(range.value) });
+            if (res.ok) { this.textContent = 'Saved ✔'; var b = this; setTimeout(function () { b.textContent = 'Save'; }, 1500); }
+            else { alert(res.message || 'Could not save radius.'); }
+        });
+
+        // Slots
+        function bindDelete(btn) {
+            btn.addEventListener('click', async function () {
+                var id = parseInt(this.getAttribute('data-id'));
+                var res = await postJson('@Url.Action("DeleteTimeSlot", "Worker")', { value: id });
+                if (res.ok) { var chip = this.closest('.chip'); if (chip) chip.remove(); }
+                else { alert('Could not delete slot.'); }
+            });
+        }
+        document.querySelectorAll('.del-slot').forEach(bindDelete);
+
+        document.getElementById('addSlot').addEventListener('click', async function () {
+            var s = document.getElementById('slotStart').value, e = document.getElementById('slotEnd').value;
+            if (!s || !e) { alert('Please set start and end time.'); return; }
+            var res = await postJson('@Url.Action("AddTimeSlot", "Worker")', { startTime: s, endTime: e });
+            if (res.ok) {
+                var noSlots = document.getElementById('noSlots'); if (noSlots) noSlots.remove();
+                var chip = document.createElement('span');
+                chip.className = 'chip chip-blue'; chip.setAttribute('data-id', res.id);
+                chip.innerHTML = '<i class="bi bi-clock me-1"></i>' + res.startTime + ' - ' + res.endTime +
+                    ' <button type="button" class="del-slot" data-id="' + res.id + '" style="border:none;background:none;color:inherit;cursor:pointer;">&times;</button>';
+                document.getElementById('slotList').appendChild(chip);
+                bindDelete(chip.querySelector('.del-slot'));
+                document.getElementById('slotStart').value = ''; document.getElementById('slotEnd').value = '';
+            } else { alert(res.message || 'Could not add slot.'); }
+        });
+    </script>
+}

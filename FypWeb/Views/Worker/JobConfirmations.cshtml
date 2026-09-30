@@ -1,0 +1,74 @@
+@model List<InterviewRequestVM>
+@{
+    ViewData["Title"] = "Job Offers";
+}
+
+<div class="page-head">
+    <h1>Job Offers</h1>
+    <p>Formal offers from clients. Accept to move toward being hired.</p>
+</div>
+
+@if (!Model.Any())
+{
+    <div class="card-soft"><div class="empty-state">
+        <i class="bi bi-briefcase"></i>
+        <h5 class="mt-3">No job offers</h5>
+        <p>When a client sends you a job offer, it will appear here.</p>
+    </div></div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var r in Model)
+        {
+            var pic = FypWeb.Helpers.ViewHelpers.Pic(r.OtherPartyPicture);
+            string badge; string badgeClass; string msg;
+            if (r.HiringWorkerDecision == "Rejected") { badge = "Declined"; badgeClass = "chip-red"; msg = "You declined this offer."; }
+            else if (r.Status == "Terminated") { badge = "Terminated"; badgeClass = "chip-red"; msg = "This contract was terminated."; }
+            else if (r.HiringDecision == "Accepted" || r.Status == "Finalized") { badge = "Hired"; badgeClass = "chip-green"; msg = "Congratulations! You are officially hired."; }
+            else if (r.HiringWorkerDecision == "Accepted") { badge = "Accepted"; badgeClass = "chip-blue"; msg = "Offer accepted. Awaiting client's final confirmation."; }
+            else { badge = "New Offer"; badgeClass = "chip-amber"; msg = "You've received a job offer!"; }
+            <div class="col-md-6">
+                <div class="card-soft"><div class="card-body">
+                    <div class="d-flex gap-3">
+                        @if (pic != null)
+                        {
+                            <img src="@pic" class="avatar-round" alt="@r.OtherPartyName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                            <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
+                        }
+                        else
+                        {
+                            <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
+                        }
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between">
+                                <span class="fw-bold">@r.OtherPartyName</span>
+                                <span class="chip @badgeClass">@badge</span>
+                            </div>
+                            <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
+                            <span class="chip chip-blue mt-1">@r.JobType</span>
+                        </div>
+                    </div>
+                    <div class="alert alert-light border py-2 small mt-3 mb-2">@msg</div>
+                    @if (badge == "New Offer")
+                    {
+                        <div class="d-flex gap-2">
+                            <form asp-action="RespondJobOffer" method="post" class="flex-grow-1">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="interviewId" value="@r.InterviewId" />
+                                <input type="hidden" name="decision" value="Accepted" />
+                                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Accept Offer</button>
+                            </form>
+                            <form asp-action="RespondJobOffer" method="post" class="flex-grow-1" onsubmit="return confirm('Decline this job offer?');">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="interviewId" value="@r.InterviewId" />
+                                <input type="hidden" name="decision" value="Rejected" />
+                                <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-lg me-1"></i>Decline</button>
+                            </form>
+                        </div>
+                    }
+                </div></div>
+            </div>
+        }
+    </div>
+}

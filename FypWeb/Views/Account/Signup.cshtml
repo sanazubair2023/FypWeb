@@ -1,0 +1,301 @@
+@model SignupViewModel
+@{
+    ViewData["Title"] = "Create Account";
+    Layout = "_AuthLayout";
+    var categories = ViewBag.Categories as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    var habits = ViewBag.Habits as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    var allowedRoles = new[] { "Client", "Worker", "Company" };
+    var initialRole = (!string.IsNullOrEmpty(Model?.Role) && allowedRoles.Contains(Model!.Role)) ? Model.Role : "Client";
+}
+
+<div class="auth-card" style="max-width:560px;">
+    <h2 class="mb-1">Create your account</h2>
+    <p class="text-muted mb-4">Join Maid &amp; Servant Online in a minute.</p>
+
+    <label class="form-label fw-semibold">Account type</label>
+    <div class="role-tabs mb-4" id="roleTabs">
+        <button type="button" class="role-tab" data-role="Client">Client</button>
+        <button type="button" class="role-tab" data-role="Worker">Worker</button>
+        <button type="button" class="role-tab" data-role="Company">Company</button>
+    </div>
+
+    <form asp-action="Signup" method="post" enctype="multipart/form-data" id="signupForm">
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="Role" id="roleField" value="@initialRole" />
+        <input type="hidden" asp-for="Latitude" id="latField" />
+        <input type="hidden" asp-for="Longitude" id="lngField" />
+        <input type="hidden" asp-for="ExperiencesJson" id="experiencesJson" />
+
+        <!-- ── Common: name / contact ── -->
+        <div class="row g-3">
+            <div class="col-md-6 field-common field-client field-worker">
+                <label class="form-label fw-semibold">Full Name</label>
+                <input asp-for="Name" class="form-control" placeholder="Full name" />
+            </div>
+            <div class="col-md-6 field-company">
+                <label class="form-label fw-semibold">Company Name</label>
+                <input asp-for="CompanyName" class="form-control" placeholder="Agency / company name" />
+            </div>
+            <div class="col-md-6 field-client field-company">
+                <label class="form-label fw-semibold">Email</label>
+                <input asp-for="Email" type="email" class="form-control" placeholder="you@example.com" />
+            </div>
+
+            <div class="col-md-6 field-worker">
+                <label class="form-label fw-semibold">CNIC</label>
+                <input asp-for="Cnic" class="form-control" placeholder="37405-1234567-1" />
+            </div>
+
+            <div class="col-md-6 field-company">
+                <label class="form-label fw-semibold">License Number</label>
+                <input asp-for="LicenseNumber" class="form-control" placeholder="LIC-000123" />
+            </div>
+
+            <div class="col-md-6 field-common">
+                <label class="form-label fw-semibold">Phone</label>
+                <input asp-for="Phone" class="form-control" placeholder="+92 3XX XXXXXXX" />
+            </div>
+
+            <div class="col-md-6 field-worker">
+                <label class="form-label fw-semibold">Age</label>
+                <input asp-for="Age" type="number" min="18" max="80" class="form-control" placeholder="e.g. 32" />
+            </div>
+            <div class="col-md-6 field-worker">
+                <label class="form-label fw-semibold">Gender</label>
+                <select asp-for="Gender" class="form-select">
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                </select>
+            </div>
+            <div class="col-md-6 field-worker">
+                <label class="form-label fw-semibold">Expected Salary (Rs.)</label>
+                <input asp-for="Salary" type="number" min="0" class="form-control" placeholder="e.g. 30000" />
+            </div>
+        </div>
+
+        <!-- ── Address + location ── -->
+        <div class="mt-3 field-common">
+            <label class="form-label fw-semibold field-client field-worker">Address</label>
+            <label class="form-label fw-semibold field-company">Company Address</label>
+            <textarea asp-for="Address" class="form-control" rows="2" placeholder="Street, area, city"></textarea>
+        </div>
+
+        <div class="mt-3 field-client field-worker">
+            <label class="form-label fw-semibold">Pin your location</label>
+            <p class="form-text mt-0">Tap "Use my location" or drop a pin — this powers part-time / full-time matching.</p>
+            <button type="button" class="btn btn-outline-primary btn-sm mb-2" id="btnLocate"><i class="bi bi-crosshair me-1"></i>Use my location</button>
+            <div id="signupMap" class="map-box" style="height:260px;"></div>
+            <div class="form-text" id="coordText">No location selected yet.</div>
+        </div>
+
+        <!-- ── Worker: skills / experience ── -->
+        <div class="field-worker mt-4">
+            <hr />
+            <h6 class="fw-bold"><i class="bi bi-briefcase me-1 text-brand"></i>Skills &amp; Experience</h6>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Category</label>
+                    <select class="form-select" id="expCategory">
+                        <option value="">Select category</option>
+                        @foreach (var c in categories)
+                        {
+                            <option value="@c.CategoryId">@c.CategoryName</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Skill</label>
+                    <select class="form-select" id="expSkill"><option value="">Select skill</option></select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Worked At</label>
+                    <input type="text" class="form-control" id="expWorkAt" placeholder="Employer / household" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small fw-semibold">Duration</label>
+                    <input type="text" class="form-control" id="expDuration" placeholder="e.g. 2 years" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small fw-semibold">Details</label>
+                    <input type="text" class="form-control" id="expDetail" placeholder="What did you do?" />
+                </div>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="btnAddExp"><i class="bi bi-plus-lg me-1"></i>Add experience</button>
+            <div id="expList" class="mt-2"></div>
+        </div>
+
+        <!-- ── Worker: habits ── -->
+        <div class="field-worker mt-4">
+            <h6 class="fw-bold"><i class="bi bi-stars me-1 text-brand"></i>Habits &amp; Traits <span class="text-danger">*</span></h6>
+            <p class="form-text mt-0">Select at least one.</p>
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (var h in habits)
+                {
+                    <label class="chip chip-blue" style="cursor:pointer;">
+                        <input type="checkbox" name="HabitIds" value="@h.HabitId" class="form-check-input me-1" />@h.Name
+                    </label>
+                }
+            </div>
+        </div>
+
+        <div class="field-worker mt-3">
+            <label class="form-label fw-semibold">Short Bio</label>
+            <textarea asp-for="Bio" class="form-control" rows="2" placeholder="Tell clients about yourself"></textarea>
+        </div>
+
+        <!-- ── Photo ── -->
+        <div class="mt-4 field-client field-worker field-company">
+            <label class="form-label fw-semibold">Profile Photo <span class="text-muted small">(optional, .jpg/.png)</span></label>
+            <input asp-for="PictureFile" type="file" accept=".jpg,.jpeg,.png" class="form-control" />
+        </div>
+
+        <!-- ── Password ── -->
+        <div class="row g-3 mt-2">
+            <div class="col-md-6">
+                <label class="form-label fw-semibold">Password</label>
+                <input asp-for="Password" type="password" class="form-control" placeholder="Create a password" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label fw-semibold">Confirm Password</label>
+                <input asp-for="ConfirmPassword" type="password" class="form-control" placeholder="Repeat password" />
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold mt-4">
+            <i class="bi bi-person-plus me-1"></i> Create Account
+        </button>
+    </form>
+
+    <p class="text-center mt-4 mb-0 text-muted">
+        Already registered? <a asp-action="Login" class="text-brand fw-semibold">Sign in</a>
+    </p>
+</div>
+
+@section Scripts {
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet" />
+    <script>
+        (function () {
+        var currentRole = document.getElementById('roleField').value || 'Client';
+        var tabs = document.querySelectorAll('#roleTabs .role-tab');
+        var roleField = document.getElementById('roleField');
+        var mapCtl = null, experiences = [];
+
+        function applyRole(role) {
+        currentRole = role;
+        roleField.value = role;
+        tabs.forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-role') === role); });
+
+        // hide everything role-specific, then show relevant
+        document.querySelectorAll('.field-client,.field-worker,.field-company')
+        .forEach(function (el) { el.style.display = 'none'; });
+        document.querySelectorAll('.field-common').forEach(function (el) { el.style.display = ''; });
+        document.querySelectorAll('.field-' + role.toLowerCase())
+        .forEach(function (el) { el.style.display = ''; });
+
+        if (role === 'Worker' || role === 'Client') {
+        setTimeout(ensureMap, 200);
+        }
+        }
+
+        tabs.forEach(function (t) {
+        t.addEventListener('click', function () { applyRole(t.getAttribute('data-role')); });
+        });
+
+        function ensureMap() {
+        var box = document.getElementById('signupMap');
+        if (!box || box.offsetParent === null) return;
+        if (mapCtl) { mapCtl.map.invalidateSize(); return; }
+        mapCtl = initPinMap({
+        elementId: 'signupMap',
+        onPick: function (lat, lng) {
+        document.getElementById('latField').value = lat.toFixed(6);
+        document.getElementById('lngField').value = lng.toFixed(6);
+        document.getElementById('coordText').textContent = 'Selected: ' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+        }
+        });
+        }
+
+        var locateBtn = document.getElementById('btnLocate');
+        if (locateBtn) {
+        locateBtn.addEventListener('click', function () {
+        locateBtn.disabled = true; locateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Locating...';
+        getBrowserLocation().then(function (c) {
+        ensureMap();
+        if (mapCtl) mapCtl.setPoint(c.latitude, c.longitude);
+        document.getElementById('latField').value = c.latitude.toFixed(6);
+        document.getElementById('lngField').value = c.longitude.toFixed(6);
+        document.getElementById('coordText').textContent = 'Selected: ' + c.latitude.toFixed(5) + ', ' + c.longitude.toFixed(5);
+        }).catch(function (e) { alert(e); })
+        .finally(function () { locateBtn.disabled = false; locateBtn.innerHTML = '<i class="bi bi-crosshair me-1"></i>Use my location'; });
+        });
+        }
+
+        // ── Skills AJAX ──
+        var catSel = document.getElementById('expCategory');
+        var skillSel = document.getElementById('expSkill');
+        if (catSel) {
+        catSel.addEventListener('change', function () {
+        skillSel.innerHTML = '<option value="">Loading...</option>';
+        if (!this.value) { skillSel.innerHTML = '<option value="">Select skill</option>'; return; }
+        fetch('/Account/SkillsByCategory?categoryId=' + this.value)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+        skillSel.innerHTML = '<option value="">Select skill</option>';
+        data.forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s.skillsId; o.textContent = s.skillName;
+        skillSel.appendChild(o);
+        });
+        });
+        });
+        }
+
+        function renderExps() {
+        var box = document.getElementById('expList');
+        box.innerHTML = '';
+        experiences.forEach(function (e, i) {
+        var div = document.createElement('div');
+        div.className = 'card-soft mb-2';
+        div.innerHTML = '<div class="card-body py-2 d-flex justify-content-between align-items-center">' +
+        '<div><strong>' + (e.CategoryName || '') + '</strong> · ' + (e.SkillName || '') +
+        '<br><small class="text-muted">' + (e.WorkAt || '') + ' — ' + (e.Duration || '') + '</small></div>' +
+        '<button type="button" class="btn btn-sm btn-outline-danger" data-i="' + i + '"><i class="bi bi-trash"></i></button></div>';
+        box.appendChild(div);
+        });
+        box.querySelectorAll('button[data-i]').forEach(function (b) {
+        b.addEventListener('click', function () { experiences.splice(+this.getAttribute('data-i'), 1); renderExps(); syncExp(); });
+        });
+        }
+        function syncExp() {
+        document.getElementById('experiencesJson').value = JSON.stringify(experiences.map(function (e) {
+        return { WorkAt: e.WorkAt, ExpDetail: e.ExpDetail, Duration: e.Duration, CategoryId: e.CategoryId, SkillsId: e.SkillsId };
+        }));
+        }
+
+        var addExp = document.getElementById('btnAddExp');
+        if (addExp) {
+        addExp.addEventListener('click', function () {
+        var catId = catSel.value, skillId = skillSel.value;
+        if (!catId || !skillId) { alert('Please choose a category and a skill.'); return; }
+        experiences.push({
+        CategoryId: parseInt(catId), SkillsId: parseInt(skillId),
+        CategoryName: catSel.options[catSel.selectedIndex].text,
+        SkillName: skillSel.options[skillSel.selectedIndex].text,
+        WorkAt: document.getElementById('expWorkAt').value,
+        Duration: document.getElementById('expDuration').value,
+        ExpDetail: document.getElementById('expDetail').value
+        });
+        document.getElementById('expWorkAt').value = '';
+        document.getElementById('expDuration').value = '';
+        document.getElementById('expDetail').value = '';
+        renderExps(); syncExp();
+        });
+        }
+
+        document.getElementById('signupForm').addEventListener('submit', syncExp);
+
+        applyRole(currentRole);
+        })();
+    </script>
+}

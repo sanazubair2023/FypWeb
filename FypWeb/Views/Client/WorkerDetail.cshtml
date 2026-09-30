@@ -1,0 +1,285 @@
+@model WorkerDetailVM
+@{
+    ViewData["Title"] = Model.Name;
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+}
+
+<a asp-action="FindService" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to search</a>
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card-soft">
+            <div class="card-body text-center">
+                @if (pic != null)
+                {
+                    <img src="@pic" class="detail-avatar mb-3" alt="@Model.Name" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                    <div class="detail-avatar-fallback mb-3 mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                }
+                else
+                {
+                    <div class="detail-avatar-fallback mb-3 mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                }
+                <h4 class="fw-bold mb-1">
+                    @Model.Name
+                    @if (Model.IsPoliceVerified)
+                    {
+                        <i class="bi bi-patch-check-fill text-brand" title="Police verified"></i>
+                    }
+                </h4>
+                <div class="stars mb-2">
+                    @for (int i = 1; i <= 5; i++)
+                    {
+                        <i class="bi @(i <= Math.Round(Model.Rating) ? "bi-star-fill" : "bi-star")"></i>
+                    }
+                    <span class="text-dark fw-semibold ms-1">@Model.Rating.ToString("F1")</span>
+                    <span class="text-muted small">(@Model.ReviewCount reviews)</span>
+                </div>
+                <div class="d-flex flex-wrap justify-content-center gap-1 mb-3">
+                    @foreach (var c in Model.Categories)
+                    {
+                        <span class="chip chip-blue">@c</span>
+                    }
+                </div>
+                @if (Model.AvailableStatus)
+                {
+                    <span class="chip chip-green"><i class="bi bi-circle-fill me-1" style="font-size:.5rem;"></i>Available</span>
+                }
+                else
+                {
+                    <span class="chip chip-gray">Currently unavailable</span>
+                }
+
+                <hr />
+                <ul class="list-unstyled text-start small mb-0">
+                    <li class="mb-2"><i class="bi bi-telephone me-2 text-brand"></i>@(Model.Phone ?? "N/A")</li>
+                    <li class="mb-2"><i class="bi bi-geo-alt me-2 text-brand"></i>@(Model.Address ?? "N/A")</li>
+                    <li class="mb-2"><i class="bi bi-cash-coin me-2 text-brand"></i>@Model.Salary</li>
+                    <li class="mb-2"><i class="bi bi-gender-ambiguous me-2 text-brand"></i>@(Model.Gender ?? "N/A") @(Model.Age.HasValue ? $"· {Model.Age} yrs" : "")</li>
+                    <li><i class="bi bi-person-badge me-2 text-brand"></i>CNIC: @(Model.Cnic ?? "N/A")</li>
+                </ul>
+
+                <div class="mt-4">
+                    @if (!Model.LocationKnown)
+                    {
+                        <div class="alert alert-warning py-2 small mb-3">
+                            <i class="bi bi-geo-alt me-1"></i>
+                            Your location or this worker's location isn't set, so this defaults to a
+                            <strong>Full-Time</strong> engagement.
+                            <a asp-action="Location" class="fw-semibold">Set your location</a> for accurate part-time matching.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert @(Model.JobType == "Part-Time" ? "alert-info" : "alert-warning") py-2 small mb-3">
+                            <i class="bi bi-info-circle me-1"></i>
+                            You are <strong>@Model.DistanceKm km</strong> away and this worker's service radius is
+                            <strong>@Model.Radius km</strong>, so this will be a <strong>@Model.JobType</strong> engagement
+                            (@(Model.JobType == "Part-Time" ? "within radius" : "outside radius")).
+                        </div>
+                    }
+                    @if (Model.HasActiveInterview)
+                    {
+                        <button class="btn btn-secondary w-100" disabled><i class="bi bi-hourglass-split me-1"></i>Request in progress</button>
+                    }
+                    else
+                    {
+                        <a asp-action="BookInterview" asp-route-workerId="@Model.Id" class="btn btn-primary w-100">
+                            <i class="bi bi-calendar-plus me-1"></i>Book Interview
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card-soft mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-1 text-brand"></i>Trust &amp; Verification</h6>
+
+                <!-- Police character certificate (Criminal Background Check) -->
+                @{
+                    var pStatus = Model.PoliceCertStatus;
+                    var pBorder = pStatus == "Verified" ? "border-success" : (pStatus == "Expired" ? "border-warning" : "border-danger");
+                }
+                <div class="border @pBorder rounded p-3 mb-3">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <i class="bi bi-shield-@(pStatus == "Verified" ? "check text-success" : (pStatus == "Expired" ? "exclamation text-warning" : "x text-danger"))" style="font-size:1.3rem;"></i>
+                        <div class="flex-grow-1">
+                            <div class="fw-bold">Criminal Background Check</div>
+                            <div class="small text-muted">Police character certificate</div>
+                        </div>
+                        @if (pStatus == "Verified")
+                        {
+                            <span class="chip chip-green">Verified</span>
+                        }
+                        else if (pStatus == "Expired")
+                        {
+                            <span class="chip chip-amber">Expired</span>
+                        }
+                        else
+                        {
+                            <span class="chip chip-red">Not Issued</span>
+                        }
+                    </div>
+                    @if (Model.PoliceCertNo != null)
+                    {
+                        <div class="row g-2 small mt-1">
+                            <div class="col-sm-6"><span class="text-muted">Certificate No:</span> <strong>@Model.PoliceCertNo</strong></div>
+                            <div class="col-sm-6"><span class="text-muted">Status:</span> <strong>@Model.PoliceCharacterStatus</strong></div>
+                            <div class="col-sm-6"><span class="text-muted">Issuing Station:</span> <strong>@Model.PoliceIssuingStation</strong></div>
+                            <div class="col-sm-6"><span class="text-muted">Badge:</span> <strong>@Model.PoliceIssuingBadge</strong></div>
+                            <div class="col-sm-6"><span class="text-muted">Issued:</span> <strong>@Model.PoliceIssuedDate</strong></div>
+                            <div class="col-sm-6"><span class="text-muted">Expires:</span> <strong>@Model.PoliceExpiryDate</strong></div>
+                            @if (!string.IsNullOrWhiteSpace(Model.PoliceRemarks))
+                            {
+                                <div class="col-12"><span class="text-muted">Remarks:</span> @Model.PoliceRemarks</div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="small text-muted mt-1">This worker has not yet been issued a police character certificate.</div>
+                    }
+                </div>
+
+                <!-- Company skill/training certificates (Verified Training) -->
+                <div class="border @(Model.CompanyCertificates.Any() ? "border-info" : "") rounded p-3">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <i class="bi bi-patch-check@(Model.CompanyCertificates.Any() ? "-fill text-brand" : "")" style="font-size:1.3rem;"></i>
+                        <div class="flex-grow-1">
+                            <div class="fw-bold">Verified Training</div>
+                            <div class="small text-muted">Company-issued skill certificates</div>
+                        </div>
+                        <span class="chip @(Model.CompanyCertificates.Any() ? "chip-blue" : "chip-gray")">@Model.CompanyCertificates.Count</span>
+                    </div>
+                    @if (Model.CompanyCertificates.Any())
+                    {
+                        foreach (var cert in Model.CompanyCertificates)
+                        {
+                            <div class="bg-light rounded p-2 mt-2">
+                                <div class="fw-semibold">@cert.Title</div>
+                                <div class="small text-muted">Certified by @cert.CompanyName · @cert.IssuedDate</div>
+                                @if (!string.IsNullOrWhiteSpace(cert.Notes))
+                                {
+                                    <div class="small mt-1">@cert.Notes</div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="small text-muted mt-1">No company training certificates issued yet.</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Bio))
+        {
+            <div class="card-soft mb-3">
+                <div class="card-body">
+                    <h6 class="fw-bold"><i class="bi bi-person-lines-fill me-1 text-brand"></i>About</h6>
+                    <p class="mb-0 text-muted">@Model.Bio</p>
+                </div>
+            </div>
+        }
+
+        @if (Model.JobType == "Part-Time")
+        {
+            <div class="card-soft mb-3">
+                <div class="card-body">
+                    <h6 class="fw-bold"><i class="bi bi-clock me-1 text-brand"></i>Part-Time Available Slots</h6>
+                    <p class="small text-muted mb-3">This worker is within your radius (@Model.DistanceKm km away). Pick a slot when you book.</p>
+                    @if (Model.Slots.Any())
+                    {
+                        <div class="row g-2">
+                            @foreach (var s in Model.Slots)
+                            {
+                                <div class="col-6 col-md-4">
+                                    <div class="border rounded p-2 d-flex align-items-center gap-2">
+                                        <i class="bi bi-clock-history text-brand"></i>
+                                        <span class="fw-semibold">@s.StartTime - @s.EndTime</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center text-muted py-3">
+                            <i class="bi bi-clock" style="font-size:2rem;opacity:.5;"></i>
+                            <div class="mt-2 small">No active time slots defined for this worker yet.</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="card-soft mb-3">
+            <div class="card-body">
+                <h6 class="fw-bold"><i class="bi bi-briefcase me-1 text-brand"></i>Experience</h6>
+                @if (!Model.Experiences.Any())
+                {
+                    <p class="text-muted mb-0">No experience listed.</p>
+                }
+                else
+                {
+                    foreach (var e in Model.Experiences)
+                    {
+                        <div class="border-start border-3 border-primary ps-3 mb-3">
+                            <div class="fw-semibold">@e.WorkAt <span class="text-muted fw-normal small">· @e.Duration</span></div>
+                            <div class="text-muted small">@e.ExpDetail</div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        @if (Model.Habits.Any())
+        {
+            <div class="card-soft mb-3">
+                <div class="card-body">
+                    <h6 class="fw-bold"><i class="bi bi-stars me-1 text-brand"></i>Habits &amp; Traits</h6>
+                    <div class="d-flex flex-wrap gap-1">
+                        @foreach (var h in Model.Habits)
+                        {
+                            <span class="chip chip-green">@h</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="card-soft">
+            <div class="card-body">
+                <h6 class="fw-bold"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Reviews (@Model.ReviewCount)</h6>
+                @if (!Model.Reviews.Any())
+                {
+                    <p class="text-muted mb-0">No reviews yet.</p>
+                }
+                else
+                {
+                    foreach (var r in Model.Reviews)
+                    {
+                        <div class="border-bottom py-2">
+                            <div class="d-flex justify-content-between">
+                                <span class="stars">
+                                    @for (int i = 1; i <= 5; i++)
+                                    {
+                                        <i class="bi @(i <= r.Rating ? "bi-star-fill" : "bi-star")"></i>
+                                    }
+                                </span>
+                                <small class="text-muted">@r.ReviewDate · by @r.ReviewerRole</small>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(r.Comment))
+                            {
+                                <div class="small mt-1">@r.Comment</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>

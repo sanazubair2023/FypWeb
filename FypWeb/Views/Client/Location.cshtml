@@ -1,0 +1,115 @@
+﻿@model Fyp_Backend.Models.Client
+@{
+    ViewData["Title"] = "My Location";
+    var workers = ViewBag.Workers as List<MapWorkerVM> ?? new List<MapWorkerVM>();
+    var ci = System.Globalization.CultureInfo.InvariantCulture;
+    bool hasLoc = Model.Latitude.HasValue && Model.Longitude.HasValue;
+    var workersJson = System.Text.Json.JsonSerializer.Serialize(workers.Select(w => new
+    {
+        name = w.Name,
+        role = w.Role,
+        lat = w.Lat,
+        lng = w.Lng
+    }));
+}
+
+<a asp-action="FindService" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to search</a>
+
+<div class="page-head">
+    <h1>My Location</h1>
+    <p>Drop a pin or use your current location. This drives part-time vs full-time matching and shows nearby workers.</p>
+</div>
+
+<div class="row g-3 justify-content-center">
+    <div class="col-lg-10">
+        <div class="card-soft"><div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnLocate"><i class="bi bi-crosshair me-1"></i>Use my current location</button>
+                <span class="text-muted small" id="coordText">
+                    @(hasLoc ? $"Current: {Model.Latitude!.Value.ToString("F5", ci)}, {Model.Longitude!.Value.ToString("F5", ci)}" : "No location saved yet.")
+                </span>
+            </div>
+
+            <div class="d-flex gap-3 mb-2 small">
+                <span><i class="bi bi-circle-fill" style="color:#1E64D3;"></i> You (drag to adjust)</span>
+                <span><i class="bi bi-circle-fill" style="color:#FF6B35;"></i> Nearby workers (@workers.Count)</span>
+            </div>
+
+            <div id="clientMap" class="map-box mb-3" style="height:440px;"></div>
+            <button type="button" class="btn btn-primary w-100" id="saveLoc" disabled><i class="bi bi-save me-1"></i>Save Location</button>
+        </div></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var workers = @Html.Raw(workersJson);
+            var hasLoc = @(hasLoc ? "true" : "false");
+            var startLat = @(hasLoc ? Model.Latitude!.Value.ToString("F6", ci) : "33.6844");
+            var startLng = @(hasLoc ? Model.Longitude!.Value.ToString("F6", ci) : "73.0479");
+
+            var picked = { lat: hasLoc ? startLat : null, lng: hasLoc ? startLng : null };
+            var saveBtn = document.getElementById('saveLoc');
+            var coordText = document.getElementById('coordText');
+
+            var map = L.map('clientMap').setView([startLat, startLng], hasLoc ? 15 : 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Orange worker markers
+            var workerIcon = L.divIcon({
+                html: '<div style="background:#FF6B35;width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.3);"></div>',
+                iconSize: [16, 16], iconAnchor: [8, 8], className: ''
+            });
+            workers.forEach(function (w) {
+                if (!isNaN(w.lat) && !isNaN(w.lng)) {
+                    L.marker([w.lat, w.lng], { icon: workerIcon }).addTo(map)
+                        .bindPopup('<b>' + (w.name || 'Worker') + '</b><br>' + (w.role || 'Service Worker'));
+                }
+            });
+
+            // Blue draggable client marker
+            var clientIcon = L.divIcon({
+                html: '<div style="background:#1E64D3;width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);"></div>',
+                iconSize: [18, 18], iconAnchor: [9, 9], className: ''
+            });
+            var clientMarker = null;
+            function setPicked(lat, lng) {
+                picked.lat = lat; picked.lng = lng;
+                if (clientMarker) { clientMarker.setLatLng([lat, lng]); }
+                else { clientMarker = L.marker([lat, lng], { icon: clientIcon, draggable: true }).addTo(map).bindPopup('Your Location<br><small>Drag to adjust</small>'); }
+                clientMarker.off('dragend').on('dragend', function (e) {
+                    var p = e.target.getLatLng(); picked.lat = p.lat; picked.lng = p.lng;
+                    coordText.textContent = 'Selected: ' + p.lat.toFixed(5) + ', ' + p.lng.toFixed(5);
+                    saveBtn.disabled = false;
+                });
+                coordText.textContent = 'Selected: ' + Number(lat).toFixed(5) + ', ' + Number(lng).toFixed(5);
+                saveBtn.disabled = false;
+            }
+            if (hasLoc) setPicked(startLat, startLng);
+
+            map.on('click', function (e) { setPicked(e.latlng.lat, e.latlng.lng); });
+
+            document.getElementById('btnLocate').addEventListener('click', function () {
+                var b = this; b.disabled = true; b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Locating...';
+                getBrowserLocation().then(function (c) {
+                    map.setView([c.latitude, c.longitude], 15);
+                    setPicked(c.latitude, c.longitude);
+                }).catch(function (err) { alert(err); })
+                .finally(function () { b.disabled = false; b.innerHTML = '<i class="bi bi-crosshair me-1"></i>Use my current location'; });
+            });
+
+            saveBtn.addEventListener('click', async function () {
+                if (picked.lat == null) { alert('Please pick a location first.'); return; }
+                this.disabled = true; this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+                var res = await postJson('@Url.Action("UpdateLocation", "Client")', { latitude: parseFloat(picked.lat), longitude: parseFloat(picked.lng) });
+                if (res.ok) { this.innerHTML = '<i class="bi bi-check2 me-1"></i>Saved!'; }
+                else { alert(res.message || 'Could not save location.'); this.disabled = false; this.innerHTML = '<i class="bi bi-save me-1"></i>Save Location'; }
+            });
+
+            setTimeout(function () { map.invalidateSize(); }, 250);
+        })();
+    </script>
+}

@@ -1,0 +1,69 @@
+@model ResignationVM
+@{
+    ViewData["Title"] = "Resignation";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerAvatar);
+    bool alreadyConfirmed = Model.Status == "Resigned";
+}
+
+<a asp-action="Resignations" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to resignations</a>
+
+<div class="row g-3 justify-content-center">
+    <div class="col-lg-7">
+        <div class="card-soft"><div class="card-body">
+            <div class="d-flex gap-3 align-items-center mb-3">
+                @if (pic != null)
+                {
+                    <img src="@pic" class="avatar-round" alt="@Model.WorkerName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                    <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
+                }
+                else
+                {
+                    <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
+                }
+                <div>
+                    <h5 class="fw-bold mb-0">@Model.WorkerName</h5>
+                    <span class="text-muted small">Resignation request</span>
+                </div>
+            </div>
+
+            <div class="row g-2 mb-3">
+                <div class="col-sm-6"><div class="p-2 bg-light rounded"><small class="text-muted d-block">Last working day</small><strong>@Model.LastWorkingDate</strong></div></div>
+                <div class="col-sm-6"><div class="p-2 bg-light rounded"><small class="text-muted d-block">Submitted on</small><strong>@Model.SubmittedDate</strong></div></div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Reason for resignation</label>
+                <div class="p-3 bg-light rounded">@Model.Reason</div>
+            </div>
+
+            @if (alreadyConfirmed)
+            {
+                <div class="alert alert-secondary"><i class="bi bi-check-circle me-1"></i>This resignation has already been confirmed.</div>
+            }
+            else
+            {
+                <hr />
+                <h6 class="fw-bold">Confirm resignation &amp; leave a review</h6>
+                <form asp-action="ConfirmResignation" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="interviewId" value="@Model.InterviewId" />
+                    <div class="mb-3 text-center">
+                        <label class="form-label fw-semibold d-block">Rate this worker</label>
+                        <div class="rating-input">
+                            @for (int i = 5; i >= 1; i--)
+                            {
+                                <input type="radio" name="rating" id="rd@(i)" value="@i" @(i == 5 ? "checked" : "") />
+                                <label for="rd@(i)"><i class="bi bi-star-fill"></i></label>
+                            }
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Comment (optional)</label>
+                        <textarea name="comment" class="form-control" rows="3" placeholder="Share your experience"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2-all me-1"></i>Confirm Resignation</button>
+                </form>
+            }
+        </div></div>
+    </div>
+</div>

@@ -1,0 +1,95 @@
+@model Fyp_Backend.Models.Client
+@{
+    ViewData["Title"] = "My Profile";
+    var reviews = ViewBag.Reviews as List<ReviewVM> ?? new List<ReviewVM>();
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+    double avg = reviews.Any() ? Math.Round(reviews.Average(r => (double)r.Rating), 1) : 0.0;
+    bool hasLoc = Model.Latitude.HasValue && Model.Longitude.HasValue;
+}
+
+<div class="page-head"><h1>My Profile</h1></div>
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card-soft"><div class="card-body text-center">
+            @if (pic != null)
+            {
+                <img src="@pic" class="detail-avatar mb-3" alt="@Model.Name" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                <div class="detail-avatar-fallback mb-3 mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+            }
+            else
+            {
+                <div class="detail-avatar-fallback mb-3 mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+            }
+            <h4 class="fw-bold mb-1">@Model.Name</h4>
+            <span class="chip chip-blue">Client</span>
+            <div class="stars mt-2">
+                @for (int i = 1; i <= 5; i++)
+                {
+                    <i class="bi @(i <= Math.Round(avg) ? "bi-star-fill" : "bi-star")"></i>
+                }
+                <span class="text-dark fw-semibold ms-1">@avg.ToString("F1")</span>
+                <span class="text-muted small">(@reviews.Count reviews)</span>
+            </div>
+            <hr />
+            <ul class="list-unstyled text-start small mb-0">
+                <li class="mb-2"><i class="bi bi-envelope me-2 text-brand"></i>@Model.Email</li>
+                <li class="mb-2"><i class="bi bi-telephone me-2 text-brand"></i>@Model.Phone</li>
+                <li><i class="bi bi-geo-alt me-2 text-brand"></i>@(Model.Address ?? "No address on file")</li>
+            </ul>
+        </div></div>
+    </div>
+
+    <div class="col-lg-8">
+        @if (hasLoc)
+        {
+            <div class="card-soft mb-3"><div class="card-body">
+                <h6 class="fw-bold"><i class="bi bi-geo-alt-fill me-1 text-brand"></i>Saved Location</h6>
+                <div id="clientMap" class="map-box"></div>
+            </div></div>
+        }
+
+        <div class="card-soft"><div class="card-body">
+            <h6 class="fw-bold"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Reviews from Workers (@reviews.Count)</h6>
+            @if (!reviews.Any())
+            {
+                <p class="text-muted mb-0">No reviews yet.</p>
+            }
+            else
+            {
+                foreach (var r in reviews)
+                {
+                    <div class="border-bottom py-2">
+                        <div class="d-flex justify-content-between">
+                            <span class="stars">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    <i class="bi @(i <= r.Rating ? "bi-star-fill" : "bi-star")"></i>
+                                }
+                            </span>
+                            <small class="text-muted">@r.ReviewDate</small>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(r.Comment))
+                        {
+                            <div class="small mt-1">@r.Comment</div>
+                        }
+                    </div>
+                }
+            }
+        </div></div>
+    </div>
+</div>
+
+@section Scripts {
+    @if (hasLoc)
+    {
+        <script>
+            initPinMap({
+                elementId: 'clientMap',
+                lat: @Model.Latitude!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                lng: @Model.Longitude!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                readOnly: true
+            });
+        </script>
+    }
+}

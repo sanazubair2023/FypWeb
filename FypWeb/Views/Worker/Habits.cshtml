@@ -1,0 +1,31 @@
+@model List<int>
+@{
+    ViewData["Title"] = "My Habits";
+    var allHabits = ViewBag.AllHabits as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    var selected = Model ?? new List<int>();
+}
+
+<div class="page-head">
+    <h1>My Habits &amp; Traits</h1>
+    <p>Select the habits that describe you. These help clients find the right match.</p>
+</div>
+
+<div class="row g-3 justify-content-center">
+    <div class="col-lg-8">
+        <div class="card-soft"><div class="card-body">
+            <form asp-action="Habits" method="post">
+                @Html.AntiForgeryToken()
+                <div class="d-flex flex-wrap gap-2 mb-4">
+                    @foreach (var h in allHabits)
+                    {
+                        bool isSel = selected.Contains((int)h.HabitId);
+                        <label class="chip @(isSel ? "chip-green" : "chip-gray")" style="cursor:pointer;font-size:.9rem;padding:.4rem .9rem;">
+                            <input type="checkbox" name="habitIds" value="@h.HabitId" class="form-check-input me-1" @(isSel ? "checked" : "") />@h.Name
+                        </label>
+                    }
+                </div>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Habits</button>
+            </form>
+        </div></div>
+    </div>
+</div>
