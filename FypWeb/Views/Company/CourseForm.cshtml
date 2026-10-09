@@ -1,0 +1,87 @@
+@model CourseFormVM
+@{
+    ViewData["Title"] = Model.CourseId == 0 ? "Create Course" : "Edit Course";
+}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    <a asp-action="Courses" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <h4 class="mb-0 fw-bold">@(Model.CourseId == 0 ? "Create Course" : "Edit Course")</h4>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card-soft"><div class="card-body">
+            <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+            <form asp-action="CourseForm" method="post" novalidate>
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="CourseId" />
+
+                <h6 class="fw-bold mb-3">Course information</h6>
+
+                <div class="mb-3">
+                    <label asp-for="CourseName" class="form-label fw-semibold">Course name <span class="text-danger">*</span></label>
+                    <input asp-for="CourseName" class="form-control" placeholder="Professional Home Care" />
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Description" class="form-label fw-semibold">Description</label>
+                    <textarea asp-for="Description" class="form-control" rows="2" placeholder="Purpose, outcomes and course overview"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Syllabus" class="form-label fw-semibold">Syllabus</label>
+                    <textarea asp-for="Syllabus" class="form-control" rows="3" placeholder="Modules, practical work and assessment"></textarea>
+                </div>
+
+                <h6 class="fw-bold mt-4 mb-3">Schedule</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="StartDate" class="form-label fw-semibold">Start date <span class="text-danger">*</span></label>
+                        <input type="date" asp-for="StartDate" class="form-control" required />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="EndDate" class="form-label fw-semibold">End date <span class="text-danger">*</span></label>
+                        <input type="date" asp-for="EndDate" class="form-control" required />
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="StartTime" class="form-label fw-semibold">Class start time <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white" style="color:#6750A4;"><i class="bi bi-clock"></i></span>
+                            <input type="time" asp-for="StartTime" class="form-control" required />
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="EndTime" class="form-label fw-semibold">Class end time <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white" style="color:#6750A4;"><i class="bi bi-clock-fill"></i></span>
+                            <input type="time" asp-for="EndTime" class="form-control" required />
+                        </div>
+                    </div>
+                </div>
+                <div class="form-text mt-1">Class timings shown to workers: <strong id="timingsPreview">@Model.StartTime – @Model.EndTime</strong></div>
+
+                <div class="form-check form-switch mt-4">
+                    <input class="form-check-input" type="checkbox" asp-for="IsPublished" id="pubSwitch" />
+                    <label class="form-check-label fw-semibold" for="pubSwitch">Published — visible to workers in the catalogue</label>
+                </div>
+
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-lg me-1"></i>@(Model.CourseId == 0 ? "Create Course" : "Save Changes")</button>
+                    <a asp-action="Courses" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </div></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var s = document.getElementById('StartTime'), e = document.getElementById('EndTime');
+            var preview = document.getElementById('timingsPreview');
+            function upd() { preview.textContent = (s.value || '--:--') + ' – ' + (e.value || '--:--'); }
+            s.addEventListener('change', upd); e.addEventListener('change', upd);
+        })();
+    </script>
+}

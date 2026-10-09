@@ -1,0 +1,70 @@
+@* RN helpers/ReviewCard.js — shared review card.
+   Model: ReviewVM.
+   Optional ViewData:
+     "Accent"  — accent colour for name/border (default #3B82F6)
+     "Picture" — reviewer avatar URL (falls back to the initial) *@
+@model ReviewVM
+@{
+    var accent = ViewData["Accent"] as string ?? "#3B82F6";
+    var pic = ViewData["Picture"] as string;
+    var endKey = (Model.EndType ?? "").ToLowerInvariant();
+    string? badgeLabel = endKey == "terminated" ? "Terminated" : endKey == "resigned" ? "Resigned" : null;
+    string badgeBg = badgeLabel == "Terminated" ? "#FEE2E2" : "#EDE9FE";
+    string badgeFg = badgeLabel == "Terminated" ? "#DC2626" : "#6D28D9";
+}
+<div class="rounded-3 p-3 mb-2" style="background:#fff;border:1px solid #E2E8F0;">
+    <div class="d-flex align-items-center mb-2">
+        @if (!string.IsNullOrEmpty(pic))
+        {
+            <img src="@pic" alt="@Model.ReviewerName" style="width:38px;height:38px;border-radius:19px;object-fit:cover;margin-right:12px;background:#F1F5F9;"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+            <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid @accent;background:#F8FAFC;display:none;place-items:center;font-weight:700;color:@accent;margin-right:12px;">
+                @FypWeb.Helpers.ViewHelpers.Initial(Model.ReviewerName)
+            </div>
+        }
+        else
+        {
+            <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid @accent;background:#F8FAFC;display:grid;place-items:center;font-weight:700;color:@accent;margin-right:12px;">
+                @FypWeb.Helpers.ViewHelpers.Initial(Model.ReviewerName)
+            </div>
+        }
+        <div class="flex-grow-1">
+            <div class="d-flex align-items-center flex-wrap gap-1">
+                <span class="fw-bold" style="font-size:.88rem;color:@accent;">@Model.ReviewerName</span>
+                @if (badgeLabel != null)
+                {
+                    <span class="fw-bold" style="font-size:.64rem;background:@badgeBg;color:@badgeFg;padding:2px 8px;border-radius:999px;">@badgeLabel</span>
+                }
+            </div>
+            @if (!string.IsNullOrEmpty(Model.ReviewDate))
+            {
+                <div style="font-size:.7rem;color:#64748B;">@Model.ReviewDate</div>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.WorkedPeriod))
+    {
+        <div class="mb-2" style="font-size:.7rem;color:#475569;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:4px 8px;display:inline-block;">
+            <i class="bi bi-briefcase me-1" style="font-size:.65rem;"></i>Worked: @Model.WorkedPeriod
+        </div>
+    }
+
+    <div class="d-flex align-items-center mb-1">
+        <span class="stars">
+            @for (int i = 1; i <= 5; i++)
+            {
+                <i class="bi @(i <= Math.Round(Model.Rating) ? "bi-star-fill" : "bi-star")"></i>
+            }
+        </span>
+        <span class="fw-bold ms-2" style="font-size:.82rem;color:#0F172A;">@Model.Rating.ToString("0.##")</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Comment))
+    {
+        <div style="font-size:.82rem;color:#475569;">@Model.Comment</div>
+    }
+
+    <partial name="_CriteriaBreakdown" model="Model.Criteria" />
+</div>
+

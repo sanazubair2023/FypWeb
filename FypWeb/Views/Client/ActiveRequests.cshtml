@@ -10,12 +10,14 @@
 
 @if (!Model.Any())
 {
-    <div class="card-soft"><div class="empty-state">
-        <i class="bi bi-hourglass"></i>
-        <h5 class="mt-3">No active requests</h5>
-        <p>When a worker accepts your interview invitation, they'll appear here.</p>
-        <a asp-action="FindService" class="btn btn-primary">Find a Worker</a>
-    </div></div>
+    <div class="card-soft">
+        <div class="empty-state">
+            <i class="bi bi-hourglass"></i>
+            <h5 class="mt-3">No active requests</h5>
+            <p>When a worker accepts your interview invitation, they'll appear here.</p>
+            <a asp-action="FindService" class="btn btn-primary">Find a Worker</a>
+        </div>
+    </div>
 }
 else
 {
@@ -24,40 +26,42 @@ else
         {
             var pic = FypWeb.Helpers.ViewHelpers.Pic(r.OtherPartyPicture);
             <div class="col-md-6">
-                <div class="card-soft"><div class="card-body">
-                    <div class="d-flex gap-3 align-items-center">
-                        @if (pic != null)
-                        {
-                            <img src="@pic" class="avatar-round" alt="@r.OtherPartyName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
-                            <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
-                        }
-                        else
-                        {
-                            <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
-                        }
-                        <div class="flex-grow-1">
-                            <div class="fw-bold">@r.OtherPartyName</div>
-                            <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
-                            <div class="text-muted small"><i class="bi bi-clock me-1"></i>@r.Time</div>
-                            <span class="chip chip-blue mt-1">@r.JobType</span>
-                            <span class="chip chip-green mt-1">Interview accepted</span>
+                <div class="card-soft">
+                    <div class="card-body">
+                        <div class="d-flex gap-3 align-items-center">
+                            @if (pic != null)
+                            {
+                                <img src="@pic" class="avatar-round" alt="@r.OtherPartyName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                                <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
+                            }
+                            else
+                            {
+                                <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
+                            }
+                            <div class="flex-grow-1">
+                                <div class="fw-bold">@r.OtherPartyName</div>
+                                <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
+                                <div class="text-muted small"><i class="bi bi-clock me-1"></i>@r.Time</div>
+                                <span class="chip chip-blue mt-1">@r.JobType</span>
+                                <span class="chip chip-green mt-1">Interview accepted</span>
+                            </div>
+                        </div>
+                        <hr />
+                        <div class="d-flex gap-2">
+                            <form asp-action="CreateHiring" method="post" class="flex-grow-1">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="interviewId" value="@r.InterviewId" />
+                                <input type="hidden" name="address" value="@r.Location" />
+                                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2-circle me-1"></i>Send Job Offer</button>
+                            </form>
+                            <form asp-action="WithdrawRequest" method="post" onsubmit="return confirm('Withdraw this request?');">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="interviewId" value="@r.InterviewId" />
+                                <button type="submit" class="btn btn-outline-danger"><i class="bi bi-x-lg"></i></button>
+                            </form>
                         </div>
                     </div>
-                    <hr />
-                    <div class="d-flex gap-2">
-                        <form asp-action="CreateHiring" method="post" class="flex-grow-1">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="interviewId" value="@r.InterviewId" />
-                            <input type="hidden" name="address" value="@r.Location" />
-                            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2-circle me-1"></i>Send Job Offer</button>
-                        </form>
-                        <form asp-action="WithdrawRequest" method="post" onsubmit="return confirm('Withdraw this request?');">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="interviewId" value="@r.InterviewId" />
-                            <button type="submit" class="btn btn-outline-danger"><i class="bi bi-x-lg"></i></button>
-                        </form>
-                    </div>
-                </div></div>
+                </div>
             </div>
         }
     </div>

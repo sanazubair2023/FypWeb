@@ -4,6 +4,7 @@ using FypWeb.Helpers;
 using FypWeb.ViewModels;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -212,6 +213,24 @@ namespace FypWeb.Controllers
             var validHabitIds = await _context.Habits.Where(h => habitIds.Contains(h.HabitId))
                 .Select(h => h.HabitId).ToListAsync();
 
+            // Skills come from the separate Add Skills screen as skillsJson
+            // ([{ CategoryId, SkillsId }] → Worker_Category junctions). The RN
+            // signup blocks submission without at least one sub-skill.
+            List<SkillInput> skills = new();
+            if (!string.IsNullOrWhiteSpace(model.SkillsJson))
+            {
+                try { skills = JsonConvert.DeserializeObject<List<SkillInput>>(model.SkillsJson) ?? new(); }
+                catch { skills = new(); }
+            }
+            skills = skills.Where(s => s.CategoryId > 0 && s.SkillsId > 0)
+                           .GroupBy(s => (s.CategoryId, s.SkillsId)).Select(g => g.First()).ToList();
+            if (skills.Count == 0)
+            {
+                TempData["Error"] = "Please add at least one sub-skill to proceed.";
+                await PopulateSignupLookups();
+                return View(model);
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             string? imagePath = await _images.SaveImageAsync(model.PictureFile, model.Cnic!);
@@ -240,12 +259,27 @@ namespace FypWeb.Controllers
             _context.Workers.Add(worker);
             await _context.SaveChangesAsync();
 
+            // Skills (Worker_Category junctions) — from skillsJson
+            var uniqueJunctions = new HashSet<(int, int)>();
+            foreach (var s in skills)
+            {
+                if (uniqueJunctions.Add((s.CategoryId, s.SkillsId)))
+                {
+                    _context.WorkerCategories.Add(new WorkerCategory
+                    {
+                        WorkerId = worker.WorkerId,
+                        CategoryId = s.CategoryId,
+                        SkillsId = s.SkillsId
+                    });
+                }
+            }
+
+            // Experience (work history only — no junction side-effects)
             if (!string.IsNullOrWhiteSpace(model.ExperiencesJson))
             {
                 var experiences = JsonConvert.DeserializeObject<List<ExperienceInput>>(model.ExperiencesJson);
                 if (experiences != null)
                 {
-                    var uniqueJunctions = new HashSet<(int, int)>();
                     foreach (var exp in experiences)
                     {
                         _context.Experiences.Add(new Experience
@@ -255,22 +289,10 @@ namespace FypWeb.Controllers
                             ExpDetail = exp.ExpDetail,
                             Duration = exp.Duration
                         });
-
-                        int catId = exp.CategoryId ?? 0;
-                        int skillId = exp.SkillsId ?? 0;
-                        if (catId > 0 && skillId > 0 && uniqueJunctions.Add((catId, skillId)))
-                        {
-                            _context.WorkerCategories.Add(new WorkerCategory
-                            {
-                                WorkerId = worker.WorkerId,
-                                CategoryId = catId,
-                                SkillsId = skillId
-                            });
-                        }
                     }
-                    await _context.SaveChangesAsync();
                 }
             }
+            await _context.SaveChangesAsync();
 
             foreach (var hid in validHabitIds)
             {
@@ -342,6 +364,23 @@ namespace FypWeb.Controllers
                 .Where(h => h.IsActive)
                 .OrderBy(h => h.SortOrder).ThenBy(h => h.Name)
                 .Select(h => new { h.HabitId, h.Name }).ToListAsync();
+        }
+
+        // ── ADD SKILLS (separate screen — RN AddSkillScreen) ──────────────────────
+        // Reached from the worker Signup form (pre-auth) and from the worker
+        // Edit Profile form. The screen itself is fully client-side: it keeps
+        // the picked skills + experiences in sessionStorage (key "fypAddSkills")
+        // and the calling form re-reads them on return. returnTo only controls
+        // the Back button target.
+        [HttpGet]
+        [AllowAnonymous]
+        public async Task<IActionResult> AddSkills(string? returnTo)
+        {
+            ViewBag.Categories = await _context.Categories
+                .OrderBy(c => c.CategoryName)
+                .Select(c => new { c.CategoryId, c.CategoryName }).ToListAsync();
+            ViewBag.ReturnTo = returnTo == "workerEdit" ? "workerEdit" : "signup";
+            return View();
         }
 
         // ── AJAX lookup used by the worker signup skills picker ───────────────────

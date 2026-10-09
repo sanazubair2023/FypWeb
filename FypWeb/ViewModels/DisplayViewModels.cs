@@ -15,14 +15,60 @@ namespace FypWeb.ViewModels
         public List<string> Categories { get; set; } = new();
         public bool AvailableStatus { get; set; }
         public bool IsPoliceVerified { get; set; }
+
+        // RN "Certified" chip: legacy WorkerCertifications ∪ non-revoked
+        // CourseCertificates (backend GetWorkers isCompanyCertified).
+        public bool IsCompanyCertified { get; set; }
     }
 
     public class ReviewVM
     {
-        public int Rating { get; set; }
+        // Overall is the average of the per-criterion scores (e.g. 4.33) for
+        // client -> worker reviews; whole numbers for worker -> client reviews.
+        public decimal Rating { get; set; }
         public string? Comment { get; set; }
         public string ReviewerRole { get; set; } = "Client";
+        public string ReviewerName { get; set; } = "Anonymous";
         public string ReviewDate { get; set; } = "";
+        // "dd MMM – dd MMM yyyy (N days)" — contract window behind the review
+        // (RN review card: "Worked: …"). Null when no contract dates exist.
+        public string? WorkedPeriod { get; set; }
+
+        // How the contract ended ("Terminated" / "Resigned" / …) — drives the
+        // red/violet badge on the RN ReviewCard. Null/blank = no badge.
+        public string? EndType { get; set; }
+
+        // Per-criterion breakdown [{ Name, Score }] — empty for legacy reviews.
+        public List<CriteriaScoreVM> Criteria { get; set; } = new();
+    }
+
+    // One criterion row displayed on a review card (RN CriteriaBreakdown).
+    public class CriteriaScoreVM
+    {
+        public string Name { get; set; } = "";
+        public int Score { get; set; }
+    }
+
+    // ── DETAIL-REVIEW INPUT (RN CriteriaReviewSection) ────────────────────────
+    // Star rows rendered when a client closes a contract: the common criteria
+    // ("Basics") plus one group per profession the worker holds.
+    public class CriteriaInputVM
+    {
+        public int CriteriaId { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    public class CriteriaGroupVM
+    {
+        public string GroupName { get; set; } = "Basics";
+        public List<CriteriaInputVM> Items { get; set; } = new();
+    }
+
+    // Form-posted score for one criterion (binds criteriaScores[i].CriteriaId / .Score).
+    public class CriteriaScoreInput
+    {
+        public int CriteriaId { get; set; }
+        public int Score { get; set; }
     }
 
     public class WorkerDetailVM
@@ -64,6 +110,16 @@ namespace FypWeb.ViewModels
         public string? PoliceRemarks { get; set; }
         // Company-issued skill/training certificates
         public List<WorkerCertItemVM> CompanyCertificates { get; set; } = new();
+
+        // Verified Training card (RN WorkerDetailScreen / GetWorkerCertificateDetail):
+        // the legacy company certification, or else the newest non-revoked
+        // course-completion certificate. One card — null title = none.
+        public bool HasVerifiedTraining { get; set; }
+        public string? TrainingTitle { get; set; }
+        public string? TrainingCompany { get; set; }
+        public string? TrainingIssuedDate { get; set; }
+        public string? TrainingCode { get; set; }
+        public bool TrainingIsCourse { get; set; }
     }
 
     public class WorkerCertItemVM
@@ -118,8 +174,8 @@ namespace FypWeb.ViewModels
         public int? HiringId { get; set; }
         public string HiringWorkerDecision { get; set; } = "";
         public string HiringDecision { get; set; } = "";
-        public string? SlotStart { get; set; }   // <-- add
-        public string? SlotEnd { get; set; }     // <-- add
+        public string? SlotStart { get; set; }
+        public string? SlotEnd { get; set; }
     }
 
     // ── Resignations ──────────────────────────────────────────────────────────
@@ -133,6 +189,18 @@ namespace FypWeb.ViewModels
         public string LastWorkingDate { get; set; } = "";
         public string SubmittedDate { get; set; } = "";
         public string Status { get; set; } = "";
+
+        // Detail view (RN ResignationScreen): has the client already confirmed?
+        public bool IsConfirmed { get; set; }
+
+        // The worker's own closing review (written when resigning).
+        public ReviewVM? WorkerReview { get; set; }
+
+        // The client's criteria-scored review, shown locked after confirming.
+        public ReviewVM? ClientReview { get; set; }
+
+        // Star rows for the client's criteria input (empty once confirmed).
+        public List<CriteriaGroupVM> CriteriaGroups { get; set; } = new();
     }
 
     // ── Worker dashboard ──────────────────────────────────────────────────────
@@ -159,6 +227,25 @@ namespace FypWeb.ViewModels
         public List<SlotVM> Slots { get; set; } = new();
         public List<ReviewVM> Reviews { get; set; } = new();
         public List<string> Habits { get; set; } = new();
+
+        // Skills tab (RN WorkerDashboardScreen): primary category + its skills,
+        // and every other category grouped as secondary/part-time services.
+        public string PrimaryRole { get; set; } = "General Worker";
+        public List<string> PrimarySkills { get; set; } = new();
+        public List<PartTimeSkillGroupVM> PartTimeSkills { get; set; } = new();
+
+        // Overview notification counters (RN WorkerDashboardScreen header cards —
+        // api/Dashboard/GetWorkerDetail: pendingRequestCount / jobNotificationCount /
+        // terminationCount).
+        public int PendingRequestCount { get; set; }
+        public int JobNotificationCount { get; set; }
+        public int TerminationCount { get; set; }
+    }
+
+    public class PartTimeSkillGroupVM
+    {
+        public string CategoryName { get; set; } = "Additional Service";
+        public List<string> Skills { get; set; } = new();
     }
 
     // ── Map markers (client Location / Map screen) ────────────────────────────

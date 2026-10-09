@@ -1,0 +1,98 @@
+@model EditClientProfileVM
+@{
+    ViewData["Title"] = "Edit Profile";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.CurrentPicture);
+}
+
+<div class="page-head d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div>
+        <h1>Edit Profile</h1>
+        <p class="text-muted mb-0">Update your personal details. Photo and password are optional.</p>
+    </div>
+    <a asp-action="Profile" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Back to Profile</a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card-soft">
+            <div class="card-body">
+                <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+                <form asp-action="EditProfile" method="post" enctype="multipart/form-data" id="editForm" novalidate>
+                    @Html.AntiForgeryToken()
+
+                    <div class="text-center mb-4">
+                        @if (pic != null)
+                        {
+                            <img src="@pic" class="detail-avatar mb-2" alt="Current photo" id="photoPreview"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                            <div class="detail-avatar-fallback mb-2 mx-auto" id="photoFallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                        }
+                        else
+                        {
+                            <div class="detail-avatar-fallback mb-2 mx-auto" id="photoFallback">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                            <img src="" class="detail-avatar mb-2" alt="" id="photoPreview" style="display:none;" />
+                        }
+                        <div>
+                            <label class="btn btn-sm btn-outline-primary mb-0" for="PictureFile">
+                                <i class="bi bi-camera me-1"></i>Change photo
+                            </label>
+                            <input asp-for="PictureFile" type="file" accept=".jpg,.jpeg,.png" class="d-none" id="PictureFile" />
+                            <div class="form-text mt-1">Leave unchanged to keep your current photo (.jpg / .png).</div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="Name" class="form-label fw-semibold">Full Name <span class="text-danger">*</span></label>
+                            <input asp-for="Name" class="form-control" placeholder="Your full name" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Email" class="form-label fw-semibold">Email <span class="text-danger">*</span></label>
+                            <input asp-for="Email" type="email" class="form-control" placeholder="you@example.com" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Phone" class="form-label fw-semibold">Phone No <span class="text-danger">*</span></label>
+                            <input asp-for="Phone" type="tel" class="form-control" placeholder="03XXXXXXXXX" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Address" class="form-label fw-semibold">Address <span class="text-danger">*</span></label>
+                            <input asp-for="Address" class="form-control" placeholder="House / street / area" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Password" class="form-label fw-semibold">New Password</label>
+                            <input asp-for="Password" type="password" class="form-control" placeholder="Leave blank to keep current" autocomplete="new-password" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="ConfirmPassword" class="form-label fw-semibold">Confirm New Password</label>
+                            <input asp-for="ConfirmPassword" type="password" class="form-control" placeholder="Repeat new password" autocomplete="new-password" />
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-lg me-1"></i>Save Changes</button>
+                        <a asp-action="Profile" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            // Live preview of the newly picked photo.
+            var input = document.getElementById('PictureFile');
+            var preview = document.getElementById('photoPreview');
+            var fallback = document.getElementById('photoFallback');
+            input.addEventListener('change', function () {
+                if (input.files && input.files[0]) {
+                    preview.src = URL.createObjectURL(input.files[0]);
+                    preview.style.display = '';
+                    fallback.style.display = 'none';
+                }
+            });
+        })();
+    </script>
+}

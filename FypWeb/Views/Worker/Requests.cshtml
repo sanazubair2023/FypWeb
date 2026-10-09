@@ -10,11 +10,13 @@
 
 @if (!Model.Any())
 {
-    <div class="card-soft"><div class="empty-state">
-        <i class="bi bi-inbox"></i>
-        <h5 class="mt-3">No pending requests</h5>
-        <p>New interview invitations will show up here.</p>
-    </div></div>
+    <div class="card-soft">
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <h5 class="mt-3">No pending requests</h5>
+            <p>New interview invitations will show up here.</p>
+        </div>
+    </div>
 }
 else
 {
@@ -23,46 +25,48 @@ else
         {
             var pic = FypWeb.Helpers.ViewHelpers.Pic(r.OtherPartyPicture);
             <div class="col-md-6">
-                <div class="card-soft"><div class="card-body">
-                    <div class="d-flex gap-3">
-                        @if (pic != null)
-                        {
-                            <img src="@pic" class="avatar-round" alt="@r.OtherPartyName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
-                            <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
-                        }
-                        else
-                        {
-                            <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
-                        }
-                        <div class="flex-grow-1">
-                            <div class="fw-bold">@r.OtherPartyName</div>
-                            <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
-                            <div class="text-muted small"><i class="bi bi-clock me-1"></i>@r.Time</div>
-                            <div class="mt-1">
-                                <span class="chip chip-blue">@r.JobType</span>
-                                @if (r.JobType == "Full-Time" && r.IsResidenceProvided == true)
-                                {
-                                    <span class="chip chip-green">Residence provided</span>
-                                }
+                <div class="card-soft">
+                    <div class="card-body">
+                        <div class="d-flex gap-3">
+                            @if (pic != null)
+                            {
+                                <img src="@pic" class="avatar-round" alt="@r.OtherPartyName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                                <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
+                            }
+                            else
+                            {
+                                <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
+                            }
+                            <div class="flex-grow-1">
+                                <div class="fw-bold">@r.OtherPartyName</div>
+                                <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
+                                <div class="text-muted small"><i class="bi bi-clock me-1"></i>@r.Time</div>
+                                <div class="mt-1">
+                                    <span class="chip chip-blue">@r.JobType</span>
+                                    @if (r.JobType == "Full-Time" && r.IsResidenceProvided == true)
+                                    {
+                                        <span class="chip chip-green">Residence provided</span>
+                                    }
+                                </div>
                             </div>
                         </div>
+                        <hr />
+                        <div class="d-flex gap-2">
+                            <form asp-action="DecideInterview" method="post" class="flex-grow-1">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="id" value="@r.InterviewId" />
+                                <input type="hidden" name="decision" value="Accepted" />
+                                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Accept</button>
+                            </form>
+                            <form asp-action="DecideInterview" method="post" class="flex-grow-1" onsubmit="return confirm('Decline this interview?');">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="id" value="@r.InterviewId" />
+                                <input type="hidden" name="decision" value="Rejected" />
+                                <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-lg me-1"></i>Decline</button>
+                            </form>
+                        </div>
                     </div>
-                    <hr />
-                    <div class="d-flex gap-2">
-                        <form asp-action="DecideInterview" method="post" class="flex-grow-1">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="id" value="@r.InterviewId" />
-                            <input type="hidden" name="decision" value="Accepted" />
-                            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Accept</button>
-                        </form>
-                        <form asp-action="DecideInterview" method="post" class="flex-grow-1" onsubmit="return confirm('Decline this interview?');">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="id" value="@r.InterviewId" />
-                            <input type="hidden" name="decision" value="Rejected" />
-                            <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-lg me-1"></i>Decline</button>
-                        </form>
-                    </div>
-                </div></div>
+                </div>
             </div>
         }
     </div>

@@ -1,0 +1,279 @@
+@{
+    ViewData["Title"] = "Filteration";
+    var categories = ViewBag.Categories as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    var habits = ViewBag.Habits as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    var cities = ViewBag.Cities as string[] ?? Array.Empty<string>();
+    string gender = ViewBag.Gender ?? "";
+    string city = ViewBag.City ?? "";
+    var selCats = (ViewBag.SelectedCategories as List<string>) ?? new List<string>();
+    var selSubs = (ViewBag.SelectedSubSkills as List<string>) ?? new List<string>();
+    var selHabits = (ViewBag.SelectedHabits as List<int>) ?? new List<int>();
+}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    <a asp-action="FindService" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+        <h4 class="mb-0 fw-bold">FILTERATION</h4>
+        <small class="text-muted">Refine your worker search.</small>
+    </div>
+</div>
+
+<div class="card-soft mb-3">
+    <div class="card-body">
+
+        <!-- Active filter tags -->
+        <div class="d-flex flex-wrap gap-2 mb-3" id="tagRow"></div>
+
+        <!-- GENDER -->
+        <div class="mb-4">
+            <div class="small fw-bold mb-2"><i class="bi bi-person me-1"></i>GENDER</div>
+            <div class="d-flex gap-2" id="genderRow">
+                @foreach (var g in new[] { "Male", "Female", "Both" })
+                {
+                    <button type="button" class="chip chip-select @(g == "Male" ? "on" : "")" data-gender="@g">@g</button>
+                }
+            </div>
+        </div>
+
+        <!-- CITY -->
+        <div class="mb-4">
+            <div class="small fw-bold mb-2"><i class="bi bi-geo-alt me-1"></i>CITY</div>
+            <select class="form-select" id="citySelect" style="max-width:280px;">
+                <option value="">Select recommended city</option>
+                @foreach (var c in cities)
+                {
+                    <option value="@c" selected="@(c == city)">@c</option>
+                }
+            </select>
+        </div>
+
+        <!-- CATEGORIES -->
+        <div class="mb-4">
+            <div class="small fw-bold mb-2"><i class="bi bi-grid me-1"></i>CATEGORIES</div>
+            <div class="d-flex flex-wrap gap-2" id="catRow">
+                @foreach (var c in categories)
+                {
+                    <button type="button" class="chip chip-select" data-id="@c.CategoryId" data-name="@c.CategoryName">
+                        <i class="bi bi-briefcase me-1"></i>@c.CategoryName
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- SUB-SKILLS (per selected category) -->
+        <div class="mb-4">
+            <div class="small fw-bold mb-2"><i class="bi bi-collection me-1"></i>SUB-SKILLS</div>
+            <div id="subWrap"><p class="text-muted small mb-0">Select a category to see its sub-skills.</p></div>
+        </div>
+
+        <!-- HABITS -->
+        <div class="mb-2">
+            <div class="small fw-bold mb-2"><i class="bi bi-stars me-1"></i>HABITS &amp; TRAITS</div>
+            <div class="d-flex flex-wrap gap-2" id="habitRow">
+                @foreach (var h in habits)
+                {
+                    <button type="button" class="chip chip-select" data-id="@h.HabitId" data-name="@h.Name">
+                        <i class="bi bi-star me-1"></i>@h.Name
+                    </button>
+                }
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<div class="d-flex gap-2 mb-4">
+    <button type="button" class="btn btn-primary px-4" id="btnApply"><i class="bi bi-check-lg me-1"></i>Apply Filters</button>
+    <button type="button" class="btn btn-outline-danger" id="btnReset"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</button>
+    <a asp-action="FindService" class="btn btn-outline-secondary">Cancel</a>
+</div>
+
+@section Styles {
+    <style>
+        .chip-select {
+            background: #F5F7FB;
+            border: 1px solid #D9E5F3;
+            color: #333;
+            border-radius: 18px;
+            padding: 7px 13px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+            .chip-select.on {
+                background: #1E64D3;
+                border-color: #1E64D3;
+                color: #fff;
+            }
+
+        .tag-chip {
+            background: #EAF2FF;
+            border: 1px solid #D8E6FF;
+            color: #1E64D3;
+            border-radius: 16px;
+            padding: 5px 11px;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .subcat-box {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 13px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+    </style>
+}
+@section Scripts {
+    <script>
+        (function () {
+            var gender = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(gender))';
+            var city = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(city))';
+            var cats = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(selCats));
+            var subs = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(selSubs));
+            var habitsSel = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(selHabits));
+            var subCache = {};
+            var catButtons = Array.prototype.slice.call(document.querySelectorAll('#catRow button'));
+
+            // Normalise preselected categories: the query may carry ids or names.
+            var catIds = [];
+            cats.forEach(function (c) {
+                var b = catButtons.find(function (x) { return x.getAttribute('data-name') === c || x.getAttribute('data-id') === c; });
+                if (b && catIds.indexOf(b.getAttribute('data-id')) < 0) catIds.push(b.getAttribute('data-id'));
+            });
+
+            function setGender(g) { gender = g; paint(); }
+            function toggleCat(id) {
+                var i = catIds.indexOf(id);
+                if (i >= 0) catIds.splice(i, 1); else catIds.push(id);
+                paint();
+            }
+            function toggleSub(name) {
+                var i = subs.indexOf(name);
+                if (i >= 0) subs.splice(i, 1); else subs.push(name);
+                paintSubs();
+            }
+            function toggleHabit(id) {
+                id = String(id);
+                var i = habitsSel.indexOf(id);
+                if (i >= 0) habitsSel.splice(i, 1); else habitsSel.push(id);
+                paint();
+            }
+
+            document.getElementById('genderRow').addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-gender]');
+                if (b) setGender(b.getAttribute('data-gender'));
+            });
+            document.getElementById('citySelect').addEventListener('change', function () { city = this.value; paint(); });
+            document.getElementById('catRow').addEventListener('click', function (e) {
+                var b = e.target.closest('button');
+                if (b) toggleCat(b.getAttribute('data-id'));
+            });
+            document.getElementById('habitRow').addEventListener('click', function (e) {
+                var b = e.target.closest('button');
+                if (b) toggleHabit(b.getAttribute('data-id'));
+            });
+
+            function loadSubs(catId) {
+                if (subCache[catId]) return Promise.resolve();
+                return fetch('/Account/SkillsByCategory?categoryId=' + catId)
+                    .then(function (r) { return r.json(); })
+                    .then(function (list) { subCache[catId] = list || []; });
+            }
+
+            function paint() {
+                document.querySelectorAll('#genderRow button').forEach(function (b) {
+                    b.classList.toggle('on', b.getAttribute('data-gender') === gender);
+                });
+                catButtons.forEach(function (b) {
+                    b.classList.toggle('on', catIds.indexOf(b.getAttribute('data-id')) >= 0);
+                });
+                document.querySelectorAll('#habitRow button').forEach(function (b) {
+                    b.classList.toggle('on', habitsSel.indexOf(b.getAttribute('data-id')) >= 0);
+                });
+                paintTags();
+                paintSubs();
+            }
+
+            function paintTags() {
+                var row = document.getElementById('tagRow');
+                row.innerHTML = '';
+                function tag(label, onRemove) {
+                    var s = document.createElement('button');
+                    s.type = 'button';
+                    s.className = 'tag-chip';
+                    s.innerHTML = label + ' <i class="bi bi-x-lg"></i>';
+                    s.addEventListener('click', onRemove);
+                    row.appendChild(s);
+                }
+                if (gender) tag(gender, function () { setGender(''); });
+                if (city) tag(city, function () { city = ''; document.getElementById('citySelect').value = ''; paint(); });
+                catIds.forEach(function (id) {
+                    var b = catButtons.find(function (x) { return x.getAttribute('data-id') === id; });
+                    if (b) tag(b.getAttribute('data-name'), function () { toggleCat(id); });
+                });
+                habitsSel.forEach(function (id) {
+                    var b = document.querySelector('#habitRow button[data-id="' + id + '"]');
+                    if (b) tag(b.getAttribute('data-name'), function () { toggleHabit(id); });
+                });
+                if (!row.children.length) row.innerHTML = '<span class="text-muted small">No filters applied yet.</span>';
+            }
+
+            function paintSubs() {
+                var wrap = document.getElementById('subWrap');
+                wrap.innerHTML = '';
+                if (!catIds.length) {
+                    wrap.innerHTML = '<p class="text-muted small mb-0">Select a category to see its sub-skills.</p>';
+                    return;
+                }
+                catIds.forEach(function (id) {
+                    var btn = catButtons.find(function (x) { return x.getAttribute('data-id') === id; });
+                    var box = document.createElement('div');
+                    box.className = 'subcat-box';
+                    box.innerHTML = '<div class="small fw-bold mb-2">' + (btn ? btn.getAttribute('data-name') : '') + '</div>';
+                    var chipRow = document.createElement('div');
+                    chipRow.className = 'd-flex flex-wrap gap-2';
+                    box.appendChild(chipRow);
+                    wrap.appendChild(box);
+                    loadSubs(id).then(function () {
+                        (subCache[id] || []).forEach(function (s) {
+                            var on = subs.indexOf(s.skillName) >= 0;
+                            var b = document.createElement('button');
+                            b.type = 'button';
+                            b.className = 'chip chip-select' + (on ? ' on' : '');
+                            b.innerHTML = (on ? '<i class="bi bi-check-circle me-1"></i>' : '<i class="bi bi-plus-circle me-1"></i>') + s.skillName;
+                            b.addEventListener('click', function () { toggleSub(s.skillName); });
+                            chipRow.appendChild(b);
+                        });
+                    });
+                });
+            }
+
+            function buildUrl() {
+                var p = new URLSearchParams();
+                if (gender && gender !== 'Both') p.set('gender', gender);
+                if (city) p.set('city', city);
+                catIds.forEach(function (id) {
+                    var b = catButtons.find(function (x) { return x.getAttribute('data-id') === id; });
+                    if (b) p.append('categories', b.getAttribute('data-name'));
+                });
+                subs.forEach(function (s) { p.append('subSkills', s); });
+                habitsSel.forEach(function (h) { p.append('habitIds', h); });
+                var qs = p.toString();
+                return '/Client/FindService' + (qs ? '?' + qs : '');
+            }
+
+            document.getElementById('btnApply').addEventListener('click', function () {
+                window.location.href = buildUrl();
+            });
+            document.getElementById('btnReset').addEventListener('click', function () {
+                window.location.href = '/Client/FindService';
+            });
+
+            paint();
+        })();
+    </script>
+}

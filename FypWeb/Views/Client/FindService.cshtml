@@ -1,68 +1,90 @@
 @model List<WorkerCardVM>
 @{
     ViewData["Title"] = "Find a Worker";
-    var categories = ViewBag.Categories as List<string> ?? new List<string>();
-    var habits = ViewBag.Habits as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
-    string search = ViewBag.Search as string ?? "";
+    var search = ViewBag.Search as string ?? "";
+    var q = Context.Request.Query;
+    string gender = q["gender"].ToString();
+    string city = q["city"].ToString();
+    var cats = q["categories"].ToList();
+    var subs = q["subSkills"].ToList();
+    var habitsSel = ViewBag.Habits as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    bool anyFilter = !string.IsNullOrEmpty(gender) || !string.IsNullOrEmpty(city) || cats.Any() || subs.Any()
+                     || q["habitIds"].Any();
 }
 
-<div class="page-head">
-    <h1>Find a Worker</h1>
-    <p>Search verified domestic workers and filter by category, gender and traits.</p>
-</div>
+<div class="page-head"><h1>Find a Worker</h1></div>
 
-<div class="card-soft mb-4">
+<div class="card-soft mb-3">
     <div class="card-body">
-        <form method="get" asp-action="FindService" class="row g-3 align-items-end">
-            <div class="col-md-4">
-                <label class="form-label fw-semibold small">Search by name</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                    <input type="text" name="search" value="@search" class="form-control" placeholder="Worker name" />
-                </div>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label fw-semibold small">Category</label>
-                <select name="categories" class="form-select">
-                    <option value="All">All categories</option>
-                    @foreach (var c in categories)
+        <div class="row g-2 align-items-center">
+            <div class="col-md">
+                <form method="get" asp-action="FindService" class="d-flex gap-2" id="searchForm">
+                    @* keep the current filters while searching (RN parity) *@
+                    @if (!string.IsNullOrEmpty(gender) && gender != "Both")
                     {
-                        <option value="@c">@c</option>
+                        <input type="hidden" name="gender" value="@gender" />
                     }
-                </select>
+                    @if (!string.IsNullOrEmpty(city))
+                    {
+                        <input type="hidden" name="city" value="@city" />
+                    }
+                    @foreach (var c in cats)
+                    {
+                        <input type="hidden" name="categories" value="@c" />
+                    }
+                    @foreach (var s in subs)
+                    {
+                        <input type="hidden" name="subSkills" value="@s" />
+                    }
+                    @foreach (var h in q["habitIds"])
+                    {
+                        <input type="hidden" name="habitIds" value="@h" />
+                    }
+                    <input type="text" name="search" value="@search" class="form-control" placeholder="Search workers by name…" />
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-search me-1"></i>Search</button>
+                </form>
             </div>
-            <div class="col-md-3">
-                <label class="form-label fw-semibold small">Gender</label>
-                <select name="gender" class="form-select">
-                    <option value="Both">Any</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                </select>
+            <div class="col-md-auto">
+                <a class="btn btn-outline-primary"
+                   href="@Url.Action("Filter", "Client", new { gender, city, categories = cats.ToArray(), subSkills = subs.ToArray(), habitIds = q["habitIds"].ToArray() })">
+                    <i class="bi bi-funnel me-1"></i>Filter
+                </a>
             </div>
-            <div class="col-md-2">
-                <label class="form-label fw-semibold small">City</label>
-                <input type="text" name="city" class="form-control" placeholder="City" />
+        </div>
+
+        @if (anyFilter)
+        {
+            <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                <span class="small text-muted fw-semibold">Active filters:</span>
+                @if (!string.IsNullOrEmpty(gender))
+                {
+                    <span class="chip chip-blue">@gender <a href="#" class="text-decoration-none ms-1" data-clear="gender">&times;</a></span>
+                }
+                @if (!string.IsNullOrEmpty(city))
+                {
+                    <span class="chip chip-blue">@city <a href="#" class="text-decoration-none ms-1" data-clear="city">&times;</a></span>
+                }
+                @foreach (var c in cats)
+                {
+                    <span class="chip chip-blue">@c <a href="#" class="text-decoration-none ms-1" data-clearcat="@c">&times;</a></span>
+                }
+                @foreach (var s in subs)
+                {
+                    <span class="chip chip-gray">@s <a href="#" class="text-decoration-none ms-1" data-clearsub="@s">&times;</a></span>
+                }
+                @foreach (var h in q["habitIds"])
+                {
+                    var hid = int.TryParse(h, out var v) ? v : 0;
+                    var habitName = "Habit";
+                    foreach (var hb in habitsSel)
+                    {
+                        if ((int)hb.HabitId == hid) { habitName = (string)hb.Name; break; }
+                    }
+                    <span class="chip chip-green">@habitName <a href="#" class="text-decoration-none ms-1" data-clearhabit="@h">&times;</a></span>
+                }
+                <a href="@Url.Action("FindService")" class="small text-danger fw-semibold ms-1">Clear all</a>
             </div>
-            @if (habits.Any())
-            {
-                <div class="col-12">
-                    <label class="form-label fw-semibold small d-block">Traits</label>
-                    <div class="d-flex flex-wrap gap-2">
-                        @foreach (var h in habits)
-                        {
-                            <label class="chip chip-gray" style="cursor:pointer;">
-                                <input type="checkbox" name="habitIds" value="@h.HabitId" class="form-check-input me-1" />@h.Name
-                            </label>
-                        }
-                    </div>
-                </div>
-            }
-            <div class="col-12 d-flex flex-wrap gap-2">
-                <button type="submit" class="btn btn-primary"><i class="bi bi-funnel me-1"></i>Apply Filters</button>
-                <a asp-action="FindService" class="btn btn-outline-secondary">Reset</a>
-                <a asp-action="Location" class="btn btn-outline-primary ms-auto"><i class="bi bi-geo-alt-fill me-1"></i>Map &amp; My Location</a>
-            </div>
-        </form>
+        }
     </div>
 </div>
 
@@ -104,6 +126,12 @@ else
                                     {
                                         <i class="bi bi-patch-check-fill text-brand" title="Police verified"></i>
                                     }
+                                    @if (w.IsCompanyCertified)
+                                    {
+                                        <span class="chip chip-blue" style="font-size:11px;padding:2px 8px;" title="Company-trained / certified">
+                                            <i class="bi bi-patch-check me-1"></i>Certified
+                                        </span>
+                                    }
                                 </div>
                                 <div class="text-muted small">@w.Role</div>
                                 <div class="stars mt-1"><i class="bi bi-star-fill"></i> <span class="text-dark fw-semibold">@w.Rating</span></div>
@@ -128,4 +156,32 @@ else
             </div>
         }
     </div>
+}
+
+@section Scripts {
+    <script>
+        (function () {
+            // Removing a single active filter keeps the rest (RN tag behaviour).
+            document.querySelectorAll('[data-clear],[data-clearcat],[data-clearsub],[data-clearhabit]').forEach(function (a) {
+                a.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    var p = new URLSearchParams(window.location.search);
+                    if (this.hasAttribute('data-clear')) p.delete(this.getAttribute('data-clear'));
+                    if (this.hasAttribute('data-clearcat')) {
+                        var keep = p.getAll('categories').filter(function (c) { return c !== a.getAttribute('data-clearcat'); });
+                        p.delete('categories'); keep.forEach(function (c) { p.append('categories', c); });
+                    }
+                    if (this.hasAttribute('data-clearsub')) {
+                        var keepS = p.getAll('subSkills').filter(function (s) { return s !== a.getAttribute('data-clearsub'); });
+                        p.delete('subSkills'); keepS.forEach(function (s) { p.append('subSkills', s); });
+                    }
+                    if (this.hasAttribute('data-clearhabit')) {
+                        var keepH = p.getAll('habitIds').filter(function (h) { return h !== a.getAttribute('data-clearhabit'); });
+                        p.delete('habitIds'); keepH.forEach(function (h) { p.append('habitIds', h); });
+                    }
+                    window.location.href = window.location.pathname + (p.toString() ? '?' + p.toString() : '');
+                });
+            });
+        })();
+    </script>
 }

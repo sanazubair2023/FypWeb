@@ -1,69 +1,191 @@
 @model ResignationVM
 @{
-    ViewData["Title"] = "Resignation";
+    ViewData["Title"] = "Resignation Detail";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerAvatar);
-    bool alreadyConfirmed = Model.Status == "Resigned";
+    int idx = 0;
 }
 
 <a asp-action="Resignations" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to resignations</a>
 
-<div class="row g-3 justify-content-center">
+<div class="row g-3">
     <div class="col-lg-7">
-        <div class="card-soft"><div class="card-body">
-            <div class="d-flex gap-3 align-items-center mb-3">
-                @if (pic != null)
-                {
-                    <img src="@pic" class="avatar-round" alt="@Model.WorkerName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
-                    <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
-                }
-                else
-                {
-                    <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
-                }
-                <div>
-                    <h5 class="fw-bold mb-0">@Model.WorkerName</h5>
-                    <span class="text-muted small">Resignation request</span>
+        @* ── Resignation info ── *@
+        <div class="card-soft mb-3">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    @if (pic != null)
+                    {
+                        <img src="@pic" class="avatar-round" alt="@Model.WorkerName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                        <div class="avatar-round-fallback" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
+                    }
+                    else
+                    {
+                        <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
+                    }
+                    <div class="flex-grow-1">
+                        <div class="fw-bold">@Model.WorkerName</div>
+                        <div class="text-muted small">Resignation submitted @Model.SubmittedDate</div>
+                    </div>
+                    <span class="chip @(Model.IsConfirmed ? "chip-green" : "chip-amber")">@(Model.IsConfirmed ? "Confirmed" : "Pending")</span>
                 </div>
+                <hr />
+                <dl class="row small mb-0">
+                    <dt class="col-sm-4">Reason</dt>
+                    <dd class="col-sm-8">@Model.Reason</dd>
+                    <dt class="col-sm-4">Last working date</dt>
+                    <dd class="col-sm-8">@Model.LastWorkingDate</dd>
+                    <dt class="col-sm-4">Status</dt>
+                    <dd class="col-sm-8">@Model.Status</dd>
+                </dl>
             </div>
+        </div>
 
-            <div class="row g-2 mb-3">
-                <div class="col-sm-6"><div class="p-2 bg-light rounded"><small class="text-muted d-block">Last working day</small><strong>@Model.LastWorkingDate</strong></div></div>
-                <div class="col-sm-6"><div class="p-2 bg-light rounded"><small class="text-muted d-block">Submitted on</small><strong>@Model.SubmittedDate</strong></div></div>
-            </div>
+        @* ── The worker's own closing review ── *@
+        @if (Model.WorkerReview != null)
+        {
+            <h6 class="fw-bold"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Review from @Model.WorkerName</h6>
+            <partial name="_ReviewCard" model="Model.WorkerReview" />
+        }
 
-            <div class="mb-3">
-                <label class="form-label fw-semibold">Reason for resignation</label>
-                <div class="p-3 bg-light rounded">@Model.Reason</div>
-            </div>
-
-            @if (alreadyConfirmed)
+        @* ── The client's review, locked after confirming ── *@
+        @if (Model.IsConfirmed)
+        {
+            <h6 class="fw-bold mt-3"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Your review</h6>
+            @if (Model.ClientReview != null)
             {
-                <div class="alert alert-secondary"><i class="bi bi-check-circle me-1"></i>This resignation has already been confirmed.</div>
+                <partial name="_ReviewCard" model="Model.ClientReview" />
+                <div class="small text-success mt-1"><i class="bi bi-lock me-1"></i>Locked — submitted with your confirmation.</div>
             }
             else
             {
-                <hr />
-                <h6 class="fw-bold">Confirm resignation &amp; leave a review</h6>
-                <form asp-action="ConfirmResignation" method="post">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="interviewId" value="@Model.InterviewId" />
-                    <div class="mb-3 text-center">
-                        <label class="form-label fw-semibold d-block">Rate this worker</label>
-                        <div class="rating-input">
-                            @for (int i = 5; i >= 1; i--)
-                            {
-                                <input type="radio" name="rating" id="rd@(i)" value="@i" @(i == 5 ? "checked" : "") />
-                                <label for="rd@(i)"><i class="bi bi-star-fill"></i></label>
-                            }
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Comment (optional)</label>
-                        <textarea name="comment" class="form-control" rows="3" placeholder="Share your experience"></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2-all me-1"></i>Confirm Resignation</button>
-                </form>
+                <div class="card-soft"><div class="card-body text-muted small">No review was submitted with the confirmation.</div></div>
             }
-        </div></div>
+        }
+    </div>
+
+    @* ── Confirm + criteria review input ── *@
+    <div class="col-lg-5">
+        @if (!Model.IsConfirmed)
+        {
+            <div class="card-soft">
+                <div class="card-body">
+                    <h6 class="fw-bold"><i class="bi bi-clipboard-check me-1 text-brand"></i>Confirm resignation &amp; leave a review</h6>
+                    <p class="text-muted small">Confirming ends the contract. Rate every criterion for @Model.WorkerName, then add your remarks.</p>
+
+                    @if (!Model.CriteriaGroups.Any())
+                    {
+                        <div class="alert alert-warning py-2 small">
+                            <i class="bi bi-info-circle me-1"></i>No review criteria configured — run <code>DbScripts/DetailReviews.sql</code> first.
+                        </div>
+                    }
+                    else
+                    {
+                        <form asp-action="ConfirmResignation" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="interviewId" value="@Model.InterviewId" />
+
+                            <div class="fw-semibold small mb-2">Rate the following <span class="text-danger">*</span></div>
+                            @foreach (var g in Model.CriteriaGroups)
+                            {
+                                <div class="crit-group-title">@g.GroupName</div>
+                                foreach (var c in g.Items)
+                                {
+                                    <div class="crit-row">
+                                        <input type="hidden" name="criteriaScores[@idx].CriteriaId" value="@c.CriteriaId" />
+                                        <span class="crit-name">@c.Name</span>
+                                        <span class="crit-stars" data-idx="@idx">
+                                            @for (int s = 1; s <= 5; s++)
+                                            {
+                                                <input type="radio" class="d-none" name="criteriaScores[@idx].Score" value="@s" id="rs_@(idx)_@(s)" required="@(s == 1)" />
+                                                <label for="rs_@(idx)_@(s)" class="crit-star" title="@s star@((s > 1) ? "s" : "")"><i class="bi bi-star"></i></label>
+                                            }
+                                        </span>
+                                    </div>
+                                    idx++;
+                                }
+                            }
+
+                            <div class="mt-3">
+                                <label class="form-label fw-semibold">Remarks <span class="text-danger">*</span></label>
+                                <textarea name="comment" class="form-control" rows="3" placeholder="Your remarks about working with @Model.WorkerName" required></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100 mt-3"
+                                    onclick="return confirm('Confirm this resignation and submit your review?');">
+                                <i class="bi bi-check-lg me-1"></i>Confirm Resignation
+                            </button>
+                        </form>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card-soft">
+                <div class="card-body text-center py-4">
+                    <i class="bi bi-check-circle text-success" style="font-size:2rem;"></i>
+                    <div class="fw-bold mt-2">Resignation confirmed</div>
+                    <div class="text-muted small">This contract has ended.</div>
+                </div>
+            </div>
+        }
     </div>
 </div>
+
+@section Styles {
+    <style>
+        .crit-group-title {
+            margin-top: .75rem;
+            margin-bottom: .375rem;
+            font-size: .68rem;
+            font-weight: 800;
+            letter-spacing: .6px;
+            color: #1E64D3;
+            text-transform: uppercase;
+        }
+
+        .crit-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .75rem;
+            background: #F8FAFC;
+            border: 1px solid #EDF1F7;
+            border-radius: 10px;
+            padding: .5rem .75rem;
+            margin-bottom: .375rem;
+        }
+
+        .crit-name {
+            font-size: .85rem;
+            color: #333;
+        }
+
+        .crit-star {
+            cursor: pointer;
+            color: #D0D5DD;
+            font-size: 1.15rem;
+            margin-left: .15rem;
+        }
+
+            .crit-star.filled {
+                color: #FFC107;
+            }
+    </style>
+}
+
+@section Scripts {
+    <script>
+        document.querySelectorAll('.crit-stars input[type="radio"]').forEach(function (r) {
+            r.addEventListener('change', function () {
+                var wrap = this.closest('.crit-stars');
+                var val = parseInt(this.value, 10) || 0;
+                wrap.querySelectorAll('.crit-star').forEach(function (lb, i) {
+                    lb.classList.toggle('filled', i < val);
+                    var ic = lb.querySelector('i');
+                    if (ic) ic.className = (i < val) ? 'bi bi-star-fill' : 'bi bi-star';
+                });
+            });
+        });
+    </script>
+}

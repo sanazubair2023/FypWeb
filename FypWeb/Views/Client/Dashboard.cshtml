@@ -17,7 +17,11 @@
         <h1 class="ud-name">@User.GetDisplayName()</h1>
         <p class="text-muted mb-0">Here's an overview of your household staff and hiring activity.</p>
     </div>
-    <div class="ud-hero-avatar">@FypWeb.Helpers.ViewHelpers.Initial(User.GetDisplayName())</div>
+    <div class="d-flex align-items-center gap-2">
+        <a asp-action="EditProfile" class="btn btn-sm btn-outline-primary rounded-pill px-3"
+           title="Edit your profile"><i class="bi bi-square-edit-outline me-1"></i>Edit</a>
+        <div class="ud-hero-avatar">@FypWeb.Helpers.ViewHelpers.Initial(User.GetDisplayName())</div>
+    </div>
 </div>
 
 @* ---- Quick access grid (RN 4-card grid) ---- *@

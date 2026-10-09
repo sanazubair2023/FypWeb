@@ -25,6 +25,7 @@
         <input type="hidden" asp-for="Latitude" id="latField" />
         <input type="hidden" asp-for="Longitude" id="lngField" />
         <input type="hidden" asp-for="ExperiencesJson" id="experiencesJson" />
+        <input type="hidden" asp-for="SkillsJson" id="skillsJson" />
 
         <!-- ── Common: name / contact ── -->
         <div class="row g-3">
@@ -88,40 +89,18 @@
             <div class="form-text" id="coordText">No location selected yet.</div>
         </div>
 
-        <!-- ── Worker: skills / experience ── -->
+        <!-- ── Worker: skills & experience (separate screen, RN AddSkillScreen) ── -->
         <div class="field-worker mt-4">
             <hr />
-            <h6 class="fw-bold"><i class="bi bi-briefcase me-1 text-brand"></i>Skills &amp; Experience</h6>
-            <div class="row g-2 align-items-end">
-                <div class="col-md-4">
-                    <label class="form-label small fw-semibold">Category</label>
-                    <select class="form-select" id="expCategory">
-                        <option value="">Select category</option>
-                        @foreach (var c in categories)
-                        {
-                            <option value="@c.CategoryId">@c.CategoryName</option>
-                        }
-                    </select>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h6 class="fw-bold mb-1"><i class="bi bi-shapes me-1 text-brand"></i>Skills &amp; Experience <span class="text-danger">*</span></h6>
+                    <div class="small text-muted" id="skillsSummary">No skills added yet — at least one sub-skill is required.</div>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label small fw-semibold">Skill</label>
-                    <select class="form-select" id="expSkill"><option value="">Select skill</option></select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label small fw-semibold">Worked At</label>
-                    <input type="text" class="form-control" id="expWorkAt" placeholder="Employer / household" />
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label small fw-semibold">Duration</label>
-                    <input type="text" class="form-control" id="expDuration" placeholder="e.g. 2 years" />
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label small fw-semibold">Details</label>
-                    <input type="text" class="form-control" id="expDetail" placeholder="What did you do?" />
-                </div>
+                <a href="/Account/AddSkills?returnTo=signup" class="btn btn-outline-primary btn-sm" id="btnAddSkills">
+                    <i class="bi bi-plus-lg me-1"></i>Add Skills
+                </a>
             </div>
-            <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="btnAddExp"><i class="bi bi-plus-lg me-1"></i>Add experience</button>
-            <div id="expList" class="mt-2"></div>
         </div>
 
         <!-- ── Worker: habits ── -->
@@ -176,10 +155,11 @@
     <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet" />
     <script>
         (function () {
+        var STORE_KEY = 'fypAddSkills';
         var currentRole = document.getElementById('roleField').value || 'Client';
         var tabs = document.querySelectorAll('#roleTabs .role-tab');
         var roleField = document.getElementById('roleField');
-        var mapCtl = null, experiences = [];
+        var mapCtl = null;
 
         function applyRole(role) {
         currentRole = role;
@@ -231,69 +211,66 @@
         });
         }
 
-        // ── Skills AJAX ──
-        var catSel = document.getElementById('expCategory');
-        var skillSel = document.getElementById('expSkill');
-        if (catSel) {
-        catSel.addEventListener('change', function () {
-        skillSel.innerHTML = '<option value="">Loading...</option>';
-        if (!this.value) { skillSel.innerHTML = '<option value="">Select skill</option>'; return; }
-        fetch('/Account/SkillsByCategory?categoryId=' + this.value)
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-        skillSel.innerHTML = '<option value="">Select skill</option>';
-        data.forEach(function (s) {
-        var o = document.createElement('option');
-        o.value = s.skillsId; o.textContent = s.skillName;
-        skillSel.appendChild(o);
-        });
-        });
-        });
+        // ── Skills & Experience (separate screen round-trip) ──
+        function readSkillsState() {
+        try { return JSON.parse(sessionStorage.getItem(STORE_KEY) || 'null'); }
+        catch (e) { return null; }
         }
 
-        function renderExps() {
-        var box = document.getElementById('expList');
-        box.innerHTML = '';
-        experiences.forEach(function (e, i) {
-        var div = document.createElement('div');
-        div.className = 'card-soft mb-2';
-        div.innerHTML = '<div class="card-body py-2 d-flex justify-content-between align-items-center">' +
-        '<div><strong>' + (e.CategoryName || '') + '</strong> · ' + (e.SkillName || '') +
-        '<br><small class="text-muted">' + (e.WorkAt || '') + ' — ' + (e.Duration || '') + '</small></div>' +
-        '<button type="button" class="btn btn-sm btn-outline-danger" data-i="' + i + '"><i class="bi bi-trash"></i></button></div>';
-        box.appendChild(div);
-        });
-        box.querySelectorAll('button[data-i]').forEach(function (b) {
-        b.addEventListener('click', function () { experiences.splice(+this.getAttribute('data-i'), 1); renderExps(); syncExp(); });
-        });
+        function syncSkillsFields() {
+        var st = readSkillsState();
+        var skillsField = document.getElementById('skillsJson');
+        var expField = document.getElementById('experiencesJson');
+        var summary = document.getElementById('skillsSummary');
+        if (!st) {
+        skillsField.value = '';
+        expField.value = '';
+        return;
         }
-        function syncExp() {
-        document.getElementById('experiencesJson').value = JSON.stringify(experiences.map(function (e) {
-        return { WorkAt: e.WorkAt, ExpDetail: e.ExpDetail, Duration: e.Duration, CategoryId: e.CategoryId, SkillsId: e.SkillsId };
+        // Hidden fields carry only what the server needs (ids / history rows).
+        skillsField.value = JSON.stringify((st.skills || []).map(function (s) {
+        return { CategoryId: s.CategoryId, SkillsId: s.SkillsId };
         }));
+        expField.value = JSON.stringify(st.experiences || []);
+        var bits = [];
+        if (st.primaryName) bits.push('Primary: <strong>' + st.primaryName + '</strong>');
+        bits.push((st.skills || []).length + ' skill(s)');
+        bits.push((st.experiences || []).length + ' experience(s)');
+        if (summary) summary.innerHTML = bits.join(' · ');
         }
 
-        var addExp = document.getElementById('btnAddExp');
-        if (addExp) {
-        addExp.addEventListener('click', function () {
-        var catId = catSel.value, skillId = skillSel.value;
-        if (!catId || !skillId) { alert('Please choose a category and a skill.'); return; }
-        experiences.push({
-        CategoryId: parseInt(catId), SkillsId: parseInt(skillId),
-        CategoryName: catSel.options[catSel.selectedIndex].text,
-        SkillName: skillSel.options[skillSel.selectedIndex].text,
-        WorkAt: document.getElementById('expWorkAt').value,
-        Duration: document.getElementById('expDuration').value,
-        ExpDetail: document.getElementById('expDetail').value
-        });
-        document.getElementById('expWorkAt').value = '';
-        document.getElementById('expDuration').value = '';
-        document.getElementById('expDetail').value = '';
-        renderExps(); syncExp();
-        });
+        // Publish the form's current skills state so the Add Skills screen
+        // opens with what is already picked (and a Cancel keeps it).
+        document.getElementById('btnAddSkills').addEventListener('click', function () {
+        var existing = readSkillsState();
+        var skillsField = document.getElementById('skillsJson');
+        var st = existing || { primary: null, secondary: [], skills: [], experiences: [] };
+        // Re-derive from the hidden fields when the store is stale/absent.
+        if (skillsField.value) {
+        try {
+        var parsed = JSON.parse(skillsField.value);
+        if (!parsed.length) st = { primary: null, secondary: [], skills: [], experiences: JSON.parse(document.getElementById('experiencesJson').value || '[]') };
+        } catch (e) { /* keep existing */ }
         }
+        if (!st.skills || !st.skills.length) st = { primary: null, secondary: [], skills: [], experiences: st.experiences || [] };
+        sessionStorage.setItem(STORE_KEY, JSON.stringify(st));
+        });
 
-        document.getElementById('signupForm').addEventListener('submit', syncExp);
+        // Re-read every time the page is shown (covers back-navigation).
+        window.addEventListener('pageshow', syncSkillsFields);
+        syncSkillsFields();
+
+        // Submit guard — mirrors the RN "at least one sub-skill" rule.
+        document.getElementById('signupForm').addEventListener('submit', function (e) {
+        if (currentRole !== 'Worker') return;
+        var count = 0;
+        try { count = (JSON.parse(document.getElementById('skillsJson').value || '[]') || []).length; }
+        catch (err) { count = 0; }
+        if (!count) {
+        e.preventDefault();
+        alert('Please add at least one sub-skill to proceed. Tap "Add Skills".');
+        }
+        });
 
         applyRole(currentRole);
         })();

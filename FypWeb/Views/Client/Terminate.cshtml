@@ -3,65 +3,154 @@
     int interviewId = ViewBag.InterviewId ?? 0;
     string workerName = ViewBag.WorkerName as string ?? "Worker";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(ViewBag.WorkerPicture as string);
+    var groups = ViewBag.CriteriaGroups as List<CriteriaGroupVM> ?? new List<CriteriaGroupVM>();
+    int totalCriteria = groups.Sum(g => g.Items.Count);
+    int idx = 0;
 }
 
 <a asp-action="Dashboard" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to dashboard</a>
 
 <div class="row g-3 justify-content-center">
-    <div class="col-lg-6">
-        <div class="card-soft"><div class="card-body">
-            <div class="text-center mb-3">
-                @if (pic != null)
-                {
-                    <img src="@pic" class="avatar-round mx-auto d-block" alt="@workerName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
-                    <div class="avatar-round-fallback mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(workerName)</div>
-                }
-                else
-                {
-                    <div class="avatar-round-fallback mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(workerName)</div>
-                }
-                <h5 class="fw-bold mt-2 mb-0">Terminate @workerName</h5>
-                <p class="text-muted small">This ends the contract permanently.</p>
-            </div>
-
-            <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>This action cannot be undone.</div>
-
-            <form asp-action="Terminate" method="post">
-                @Html.AntiForgeryToken()
-                <input type="hidden" name="interviewId" value="@interviewId" />
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Reason for termination</label>
-                    <select name="reason" class="form-select" required>
-                        <option value="">Select a reason</option>
-                        <option>Unsatisfactory performance</option>
-                        <option>Attendance / punctuality issues</option>
-                        <option>Behavioural concerns</option>
-                        <option>No longer required</option>
-                        <option>Other</option>
-                    </select>
+    <div class="col-lg-7">
+        <div class="card-soft">
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    @if (pic != null)
+                    {
+                        <img src="@pic" class="avatar-round mx-auto d-block" alt="@workerName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                        <div class="avatar-round-fallback mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(workerName)</div>
+                    }
+                    else
+                    {
+                        <div class="avatar-round-fallback mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(workerName)</div>
+                    }
+                    <h5 class="fw-bold mt-2 mb-0">Terminate @workerName</h5>
+                    <p class="text-muted small">This ends the contract permanently.</p>
                 </div>
 
-                <div class="mb-3 text-center">
-                    <label class="form-label fw-semibold d-block">Rate this worker</label>
-                    <div class="rating-input">
-                        @for (int i = 5; i >= 1; i--)
-                        {
-                            <input type="radio" name="rating" id="tr@(i)" value="@i" @(i == 3 ? "checked" : "") />
-                            <label for="tr@(i)"><i class="bi bi-star-fill"></i></label>
-                        }
+                <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>This action cannot be undone.</div>
+
+                <form asp-action="Terminate" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="interviewId" value="@interviewId" />
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Reason for termination</label>
+                        <select name="reason" class="form-select" required>
+                            <option value="">Select a reason</option>
+                            <option>Unsatisfactory performance</option>
+                            <option>Attendance / punctuality issues</option>
+                            <option>Behavioural concerns</option>
+                            <option>No longer required</option>
+                            <option>Other</option>
+                        </select>
                     </div>
-                </div>
 
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Remarks (optional)</label>
-                    <textarea name="remarks" class="form-control" rows="3" placeholder="Additional remarks"></textarea>
-                </div>
+                    @if (totalCriteria == 0)
+                    {
+                        <div class="alert alert-warning py-2 small mb-3">
+                            <i class="bi bi-info-circle me-1"></i>No review criteria are configured yet — the closing review needs at
+                            least one active row in <strong>ReviewCriteria</strong>. Run <code>DbScripts/DetailReviews.sql</code>
+                            (it seeds the common criteria), then reload this page.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold d-block">Rate the following <span class="text-danger">*</span></label>
+                            <div class="text-muted small mb-1">The overall rating is calculated from these scores.</div>
+                            @foreach (var g in groups)
+                            {
+                                <div class="crit-group-title">@g.GroupName</div>
+                                foreach (var c in g.Items)
+                                {
+                                    <div class="crit-row">
+                                        <input type="hidden" name="criteriaScores[@idx].CriteriaId" value="@c.CriteriaId" />
+                                        <span class="crit-name">@c.Name</span>
+                                        <span class="crit-stars" data-idx="@idx">
+                                            @for (int s = 1; s <= 5; s++)
+                                            {
+                                                <input type="radio" class="d-none" name="criteriaScores[@idx].Score" value="@s" id="cs_@(idx)_@(s)" required="@(s == 1)" />
+                                                <label for="cs_@(idx)_@(s)" class="crit-star" title="@s star@((s > 1) ? "s" : "")"><i class="bi bi-star"></i></label>
+                                            }
+                                        </span>
+                                    </div>
+                                    idx++;
+                                }
+                            }
+                        </div>
+                    }
 
-                <button type="submit" class="btn btn-danger w-100" onclick="return confirm('Terminate this contract?');">
-                    <i class="bi bi-x-octagon me-1"></i>Terminate Contract
-                </button>
-            </form>
-        </div></div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Remarks (optional)</label>
+                        <textarea name="remarks" class="form-control" rows="3" placeholder="Add additional remarks/feedback"></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-danger w-100" onclick="return confirm('Terminate this contract?');">
+                        <i class="bi bi-x-octagon me-1"></i>Terminate Contract
+                    </button>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
+
+@section Styles {
+    <style>
+        .crit-group-title {
+            margin-top: .75rem;
+            margin-bottom: .375rem;
+            font-size: .68rem;
+            font-weight: 800;
+            letter-spacing: .6px;
+            color: #1E64D3;
+            text-transform: uppercase;
+        }
+
+        .crit-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .75rem;
+            background: #F8FAFC;
+            border: 1px solid #EDF1F7;
+            border-radius: 10px;
+            padding: .5rem .75rem;
+            margin-bottom: .375rem;
+        }
+
+        .crit-name {
+            font-size: .85rem;
+            color: #333;
+        }
+
+        .crit-star {
+            cursor: pointer;
+            color: #D0D5DD;
+            font-size: 1.15rem;
+            margin-left: .15rem;
+        }
+
+            .crit-star.filled {
+                color: #FFC107;
+            }
+    </style>
+}
+
+@section Scripts {
+    <script>
+        // Paint the stars for each criterion row when a score is picked
+        // (same UX as the RN CriteriaReviewSection star rows).
+        document.querySelectorAll('.crit-stars input[type="radio"]').forEach(function (r) {
+            r.addEventListener('change', function () {
+                var wrap = this.closest('.crit-stars');
+                var val = parseInt(this.value, 10) || 0;
+                wrap.querySelectorAll('.crit-star').forEach(function (lb, i) {
+                    lb.classList.toggle('filled', i < val);
+                    var ic = lb.querySelector('i');
+                    if (ic) ic.className = (i < val) ? 'bi bi-star-fill' : 'bi bi-star';
+                });
+            });
+        });
+    </script>
+}

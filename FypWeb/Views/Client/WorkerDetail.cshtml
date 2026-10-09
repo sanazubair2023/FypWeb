@@ -143,35 +143,52 @@
                     }
                 </div>
 
-                <!-- Company skill/training certificates (Verified Training) -->
-                <div class="border @(Model.CompanyCertificates.Any() ? "border-info" : "") rounded p-3">
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <i class="bi bi-patch-check@(Model.CompanyCertificates.Any() ? "-fill text-brand" : "")" style="font-size:1.3rem;"></i>
-                        <div class="flex-grow-1">
-                            <div class="fw-bold">Verified Training</div>
-                            <div class="small text-muted">Company-issued skill certificates</div>
-                        </div>
-                        <span class="chip @(Model.CompanyCertificates.Any() ? "chip-blue" : "chip-gray")">@Model.CompanyCertificates.Count</span>
-                    </div>
-                    @if (Model.CompanyCertificates.Any())
-                    {
-                        foreach (var cert in Model.CompanyCertificates)
-                        {
-                            <div class="bg-light rounded p-2 mt-2">
-                                <div class="fw-semibold">@cert.Title</div>
-                                <div class="small text-muted">Certified by @cert.CompanyName · @cert.IssuedDate</div>
-                                @if (!string.IsNullOrWhiteSpace(cert.Notes))
-                                {
-                                    <div class="small mt-1">@cert.Notes</div>
-                                }
+                <!-- Verified Training (RN: legacy certification OR newest course certificate) -->
+                @if (Model.HasVerifiedTraining)
+                {
+                    <div class="border border-info rounded p-3" style="background:#F0F9FF;">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <i class="bi bi-patch-check-fill text-brand" style="font-size:1.3rem;"></i>
+                            <div class="flex-grow-1">
+                                <div class="fw-bold">Verified Training</div>
+                                <div class="small text-muted">
+                                    @if (Model.TrainingIsCourse)
+                                    {
+                                        <text>Course completion certificate</text>
+                                    }
+                                    else
+                                    {
+                                        <text>Company-issued skill certificate</text>
+                                    }
+                                </div>
                             </div>
-                        }
-                    }
-                    else
-                    {
-                        <div class="small text-muted mt-1">No company training certificates issued yet.</div>
-                    }
-                </div>
+                            @if (Model.TrainingIsCourse)
+                            {
+                                <span class="chip chip-blue">Certified</span>
+                            }
+                        </div>
+                        <div class="bg-white rounded p-2 mt-2">
+                            <div class="fw-semibold">@Model.TrainingTitle</div>
+                            <div class="small text-muted">Certified by @(Model.TrainingCompany ?? "Verified Company") · @Model.TrainingIssuedDate</div>
+                            @if (Model.TrainingIsCourse && !string.IsNullOrEmpty(Model.TrainingCode))
+                            {
+                                <div class="small mt-1"><i class="bi bi-award me-1 text-brand"></i>Certificate code: <span class="fw-semibold">@Model.TrainingCode</span></div>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="border rounded p-3" style="background:#F8FAFC;">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <i class="bi bi-patch-check" style="font-size:1.3rem;color:#94A3B8;"></i>
+                            <div class="flex-grow-1">
+                                <div class="fw-bold text-muted">No Verified Training</div>
+                                <div class="small text-muted">This worker has no company training certificate yet</div>
+                            </div>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
 
@@ -262,21 +279,7 @@
                 {
                     foreach (var r in Model.Reviews)
                     {
-                        <div class="border-bottom py-2">
-                            <div class="d-flex justify-content-between">
-                                <span class="stars">
-                                    @for (int i = 1; i <= 5; i++)
-                                    {
-                                        <i class="bi @(i <= r.Rating ? "bi-star-fill" : "bi-star")"></i>
-                                    }
-                                </span>
-                                <small class="text-muted">@r.ReviewDate · by @r.ReviewerRole</small>
-                            </div>
-                            @if (!string.IsNullOrWhiteSpace(r.Comment))
-                            {
-                                <div class="small mt-1">@r.Comment</div>
-                            }
-                        </div>
+                        <partial name="_ReviewCard" model="r" />
                     }
                 }
             </div>

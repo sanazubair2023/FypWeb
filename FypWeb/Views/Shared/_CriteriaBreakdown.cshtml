@@ -1,0 +1,36 @@
+@* RN helpers/CriteriaBreakdown.js — tap-to-expand per-criterion breakdown.
+   Model: List<CriteriaScoreVM>. Renders nothing when empty (legacy reviews). *@
+@model List<CriteriaScoreVM>
+@{
+    var accent = ViewData["Accent"] as string ?? "#3B82F6";
+    var uid = "cb" + Guid.NewGuid().ToString("N");
+}
+@if (Model != null && Model.Count > 0)
+{
+    <div class="mt-2 pt-2" style="border-top:1px solid #E2E8F0;">
+        <a class="d-flex align-items-center justify-content-between text-decoration-none" data-bs-toggle="collapse"
+           href="#@uid" role="button" aria-expanded="false" aria-controls="@uid">
+            <span class="fw-bold" style="font-size:.78rem;color:@accent;">Criteria breakdown</span>
+            <i class="bi bi-chevron-down" style="font-size:.85rem;color:@accent;"></i>
+        </a>
+        <div class="collapse" id="@uid">
+            <div class="mt-2">
+                @foreach (var c in Model)
+                {
+                    <div class="d-flex align-items-center justify-content-between py-1" style="border-bottom:1px solid #F1F5F9;">
+                        <span class="small text-truncate me-2" style="color:#334155;max-width:60%;">@c.Name</span>
+                        <span class="d-flex align-items-center">
+                            <span class="stars">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    <i class="bi @(i <= c.Score ? "bi-star-fill" : "bi-star")" style="font-size:.7rem;"></i>
+                                }
+                            </span>
+                            <span class="fw-bold ms-2" style="font-size:.78rem;color:#0F172A;">@c.Score</span>
+                        </span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}

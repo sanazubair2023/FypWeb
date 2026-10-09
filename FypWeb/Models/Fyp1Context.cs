@@ -21,6 +21,8 @@ public partial class Fyp1Context : DbContext
     public virtual DbSet<Interview> Interviews { get; set; }
     public virtual DbSet<Resignation> Resignations { get; set; }
     public virtual DbSet<Review> Reviews { get; set; }
+    public virtual DbSet<ReviewCriteria> ReviewCriteria { get; set; }
+    public virtual DbSet<ReviewCriteriaRating> ReviewCriteriaRatings { get; set; }
     public virtual DbSet<Skill> Skills { get; set; }
     public virtual DbSet<Termination> Terminations { get; set; }
     public virtual DbSet<Worker> Workers { get; set; }
@@ -39,6 +41,9 @@ public partial class Fyp1Context : DbContext
     public virtual DbSet<Habit> Habits { get; set; }
 
     public virtual DbSet<WorkerHabits> WorkerHabits { get; set; }
+    public virtual DbSet<Course> Courses { get; set; }
+    public virtual DbSet<CourseEnrollment> CourseEnrollments { get; set; }
+    public virtual DbSet<CourseCertificate> CourseCertificates { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -136,6 +141,9 @@ public partial class Fyp1Context : DbContext
         {
             entity.HasKey(e => e.ReviewId).HasName("PK__Reviews__F85DA7EB6071CC75");
             entity.Property(e => e.ReviewId).HasColumnName("Review_ID");
+            // Overall is now the average of the per-criterion scores, so it holds
+            // fractional values (e.g. 4.33) rather than a hand-picked 1-5 int.
+            entity.Property(e => e.Rating).HasColumnType("decimal(3,2)");
             entity.Property(e => e.Comment).HasColumnType("text");
             entity.Property(e => e.InterviewId).HasColumnName("Interview_ID");
             entity.Property(e => e.ReviewDate).HasDefaultValueSql("(getdate())").HasColumnType("datetime");
@@ -147,6 +155,43 @@ public partial class Fyp1Context : DbContext
             entity.HasOne(d => d.Interview).WithMany(p => p.Reviews)
                 .HasForeignKey(d => d.InterviewId)
                 .HasConstraintName("FK__Reviews__Intervi__5FB337D6");
+        });
+
+        modelBuilder.Entity<ReviewCriteria>(entity =>
+        {
+            entity.ToTable("ReviewCriteria");
+            entity.HasKey(e => e.CriteriaId);
+            entity.Property(e => e.CriteriaId).HasColumnName("Criteria_ID");
+            entity.Property(e => e.CategoryId).HasColumnName("Category_ID");
+            entity.Property(e => e.CriteriaName).HasColumnName("Criteria_Name").HasMaxLength(100).IsUnicode(false);
+            entity.Property(e => e.SortOrder).HasColumnName("Sort_Order").HasDefaultValue(0);
+            entity.Property(e => e.IsActive).HasColumnName("Is_Active").HasDefaultValue(true);
+
+            entity.HasIndex(e => new { e.CategoryId, e.CriteriaName }).IsUnique();
+
+            // CategoryId == null => applies to every profession.
+            entity.HasOne(d => d.Category).WithMany()
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReviewCriteriaRating>(entity =>
+        {
+            entity.ToTable("ReviewCriteriaRating");
+            entity.HasKey(e => e.CriteriaRatingId);
+            entity.Property(e => e.CriteriaRatingId).HasColumnName("Criteria_Rating_ID");
+            entity.Property(e => e.ReviewId).HasColumnName("Review_ID");
+            entity.Property(e => e.CriteriaId).HasColumnName("Criteria_ID");
+
+            entity.HasIndex(e => new { e.ReviewId, e.CriteriaId }).IsUnique();
+
+            entity.HasOne(d => d.Review).WithMany(p => p.ReviewCriteriaRatings)
+                .HasForeignKey(d => d.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(d => d.Criteria).WithMany(p => p.ReviewCriteriaRatings)
+                .HasForeignKey(d => d.CriteriaId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Resignation>(entity =>
@@ -238,7 +283,7 @@ public partial class Fyp1Context : DbContext
                 .IsUnicode(false);
 
             entity.Property(e => e.HiringDate)
-                .HasColumnName("Hiring_Date");
+                .HasColumnName("HiringDate");
 
             entity.HasOne(d => d.Interview)
                 .WithMany(p => p.Hirings)
@@ -369,6 +414,37 @@ public partial class Fyp1Context : DbContext
                 .WithMany(h => h.WorkerHabits)
                 .HasForeignKey(e => e.HabitId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Course>(entity =>
+        {
+            entity.HasKey(e => e.CourseID);
+            entity.Property(e => e.StartDate).HasColumnType("date");
+            entity.Property(e => e.EndDate).HasColumnType("date");
+            entity.Property(e => e.CreatedAtUtc).HasColumnType("datetime2(0)");
+            entity.Property(e => e.RowVersion).IsRowVersion();
+            entity.HasOne(e => e.Company).WithMany().HasForeignKey(e => e.CompanyID).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CourseEnrollment>(entity =>
+        {
+            entity.HasKey(e => e.EnrollmentID);
+            entity.HasIndex(e => new { e.CourseID, e.WorkerID }).IsUnique();
+            entity.Property(e => e.RowVersion).IsRowVersion();
+            entity.HasOne(e => e.Course).WithMany(c => c.Enrollments).HasForeignKey(e => e.CourseID).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Worker).WithMany().HasForeignKey(e => e.WorkerID).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CourseCertificate>(entity =>
+        {
+            entity.HasKey(e => e.CertificateID);
+            entity.HasIndex(e => e.CertificateCode).IsUnique();
+            entity.HasIndex(e => e.EnrollmentID).IsUnique();
+            entity.HasIndex(e => new { e.CourseID, e.WorkerID }).IsUnique();
+            entity.HasOne(e => e.Enrollment).WithOne(e => e.Certificate).HasForeignKey<CourseCertificate>(e => e.EnrollmentID).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Course).WithMany(c => c.Certificates).HasForeignKey(e => e.CourseID).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Worker).WithMany().HasForeignKey(e => e.WorkerID).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Company).WithMany().HasForeignKey(e => e.CompanyID).OnDelete(DeleteBehavior.Restrict);
         });
 
         OnModelCreatingPartial(modelBuilder);

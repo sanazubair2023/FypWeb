@@ -2,195 +2,748 @@
 @{
     ViewData["Title"] = "Dashboard";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+
+    // RN header: time-of-day greeting, role • age, quick info bar.
+    int hour = DateTime.Now.Hour;
+    var greeting = hour < 12 ? "GOOD MORNING," : hour < 17 ? "GOOD AFTERNOON," : "GOOD EVENING,";
+    bool pinned = Model.Latitude.HasValue && Model.Longitude.HasValue;
+    var pinnedText = pinned
+        ? $"Pinned ({Model.Latitude?.ToString("F3")}, {Model.Longitude?.ToString("F3")})"
+        : "Location not pinned on map";
+    var radPct = Math.Round(Math.Min(100.0, Model.Radius * 100.0 / 70.0));
 }
 
-<div class="page-head">
-    <h1>Hi, @Model.Name.Split(' ')[0] 👋</h1>
-    <p>Manage your availability, schedule and profile.</p>
-</div>
-
-<div class="row g-3">
-    <!-- Left: profile -->
-    <div class="col-lg-4">
-        <div class="card-soft mb-3"><div class="card-body text-center">
+@* ───────────── HEADER: avatar + greeting + quick info bar (RN fixed header) ───────────── *@
+<div class="card-soft mb-3">
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
             @if (pic != null)
             {
-                <img src="@pic" class="detail-avatar mb-3" alt="@Model.Name" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
-                <div class="detail-avatar-fallback mb-3 mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                <img src="@pic" alt="@Model.Name" class="wdk-avatar" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                <div class="wdk-avatar wdk-avatar-ph" style="display:none;"><i class="bi bi-person-fill"></i></div>
             }
             else
             {
-                <div class="detail-avatar-fallback mb-3 mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                <div class="wdk-avatar wdk-avatar-ph"><i class="bi bi-person-fill"></i></div>
             }
-            <h4 class="fw-bold mb-1">@Model.Name</h4>
-            <div class="stars mb-2">
-                @for (int i = 1; i <= 5; i++)
-                {
-                    <i class="bi @(i <= Math.Round(Model.Rating) ? "bi-star-fill" : "bi-star")"></i>
-                }
-                <span class="text-dark fw-semibold ms-1">@Model.Rating.ToString("F1")</span>
-                <span class="text-muted small">(@Model.ReviewCount)</span>
+            <div class="flex-grow-1">
+                <div class="wdk-greeting">@greeting</div>
+                <div class="wdk-header-name">@Model.Name</div>
+                <div>
+                    <span class="wdk-role">@Model.PrimaryRole</span>
+                    <span class="wdk-age">@(Model.Age.HasValue ? $"  •  {Model.Age} Years Old" : "")</span>
+                </div>
             </div>
-            <div class="d-flex flex-wrap justify-content-center gap-1 mb-2">
+            <a asp-action="EditProfile" class="btn btn-sm wdk-edit-pill">
+                <i class="bi bi-pencil-square me-1"></i>Edit
+            </a>
+        </div>
+
+        <div class="wdk-info-bar mt-3">
+            <div class="wdk-info-col">
+                <div class="wdk-info-label">RATING</div>
+                <div class="wdk-info-value">★ @Model.Rating.ToString("F1")</div>
+                <div class="wdk-info-sub">(@Model.ReviewCount)</div>
+            </div>
+            <div class="wdk-v-divider"></div>
+            <div class="wdk-info-col" style="flex:2;">
+                <div class="wdk-info-label">LOCATION</div>
+                <div class="wdk-info-value">@(Model.Address ?? "N/A")</div>
+            </div>
+            <div class="wdk-v-divider"></div>
+            <div class="wdk-info-col">
+                <div class="wdk-info-label">SALARY</div>
+                <div class="wdk-info-value">@Model.Salary</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ───────────── UNDERLINE TABS (RN tabs: Overview|Skills|Time Slots|Experience|Reviews) ───────────── *@
+<div class="wdk-tabs" role="tablist">
+    <button class="wdk-tab active" data-tab="Overview" type="button">Overview</button>
+    <button class="wdk-tab" data-tab="Skills" type="button">Skills</button>
+    <button class="wdk-tab" data-tab="TimeSlots" type="button">Time Slots</button>
+    <button class="wdk-tab" data-tab="Experience" type="button">Experience</button>
+    <button class="wdk-tab" data-tab="Reviews" type="button">Reviews <span class="wdk-count">@Model.ReviewCount</span></button>
+</div>
+
+@* ───────────────────────── OVERVIEW ───────────────────────── *@
+<div class="wdk-pane" data-pane="Overview">
+
+    <!-- Course shortcuts — first, exactly like the RN overview -->
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <a asp-action="Courses" class="text-decoration-none h-100 d-block">
+                <div class="card-soft h-100" style="background:#1565C0; border-color:#1565C0;">
+                    <div class="card-body" style="color:#fff;">
+                        <i class="bi bi-mortarboard" style="font-size:1.6rem;"></i>
+                        <div class="fw-bold mt-2">Browse Courses</div>
+                        <small style="color:#DCEBFF;">Enroll in company training</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6">
+            <a asp-action="MyCourses" class="text-decoration-none h-100 d-block">
+                <div class="card-soft h-100">
+                    <div class="card-body">
+                        <i class="bi bi-award text-brand" style="font-size:1.6rem;"></i>
+                        <div class="fw-bold mt-2">My Learning</div>
+                        <small class="text-muted">Courses and certificates</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Duty Status + Work Location + Work Radius (single RN card) -->
+    <div class="card-soft mb-3">
+        <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="d-flex align-items-center">
+                        <span class="fw-bold">Duty Status</span>
+                        <span class="chip chip-green ms-2" id="dutyBadge" style="font-size:.72rem;">@(Model.AvailableStatus ? "Online" : "Offline")</span>
+                    </div>
+                    <div class="text-muted small mt-1" id="dutyLabel">
+                        @(Model.AvailableStatus ? "You are currently visible to customers" : "You are currently hidden")
+                    </div>
+                </div>
+                <div class="form-check form-switch fs-4 m-0">
+                    <input class="form-check-input" type="checkbox" id="dutyToggle" @(Model.AvailableStatus ? "checked" : "") />
+                </div>
+            </div>
+
+            <hr />
+
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div class="wdk-icon-circle"><i class="bi bi-geo-alt"></i></div>
+                <div class="flex-grow-1">
+                    <div class="fw-bold small">Work Location</div>
+                    <div class="text-muted small" id="locText">@pinnedText</div>
+                </div>
+                <a asp-action="Location" class="btn btn-primary btn-sm rounded-pill">
+                    <i class="bi bi-map me-1"></i>Set Location
+                </a>
+            </div>
+
+            <hr />
+
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="fw-bold small">Work Radius <span class="text-muted fw-normal">(Service Area)</span></div>
+                <div class="fw-bold text-brand" id="radBadge">@Model.Radius km</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="wdk-rad-btn" id="radMinus" title="Decrease radius"><i class="bi bi-dash-lg"></i></button>
+                <div class="wdk-rad-track"><div class="wdk-rad-fill" id="radFill" style="width:@(radPct)%"></div></div>
+                <button type="button" class="wdk-rad-btn" id="radPlus" title="Increase radius"><i class="bi bi-plus-lg"></i></button>
+            </div>
+            <div class="text-muted text-end mt-1" style="font-size:.7rem;">Max Limit: 70 km</div>
+        </div>
+    </div>
+
+    <!-- Interview Requests notification card -->
+    <a asp-action="Requests" class="text-decoration-none">
+        <div class="card-soft mb-3">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="wdk-icon-circle"><i class="bi bi-envelope"></i></div>
+                <div class="flex-grow-1">
+                    <div class="fw-bold text-dark">Interview Requests</div>
+                    <div class="text-muted small">Pending: @Model.PendingRequestCount</div>
+                </div>
+                <span class="wdk-red-badge">@Model.PendingRequestCount</span>
+            </div>
+        </div>
+    </a>
+
+    <!-- Job Notifications card -->
+    <a asp-action="JobConfirmations" class="text-decoration-none">
+        <div class="card-soft mb-3">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="wdk-icon-circle"><i class="bi bi-bell"></i></div>
+                <div class="flex-grow-1">
+                    <div class="fw-bold text-dark">Job Notifications</div>
+                    <div class="text-muted small">Job Confirmations and Rejections</div>
+                </div>
+                <span class="wdk-red-badge">@Model.JobNotificationCount</span>
+            </div>
+        </div>
+    </a>
+
+    <!-- Employment Actions -->
+    <div class="card-soft mb-3">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-exclamation-triangle" style="color:#FF4D4D; font-size:1.3rem;"></i>
+                <span class="fw-bold">Employment Actions</span>
+            </div>
+            <div class="text-muted small mt-1 mb-3">Manage your job status and termination requests</div>
+            <a asp-action="LeaveJob" class="btn w-100 wdk-resign-btn">
+                <i class="bi bi-x-circle me-2"></i>Resign from Job
+            </a>
+        </div>
+    </div>
+
+    <a asp-action="Termination" class="btn w-100 wdk-termination-btn mb-3">
+        Check Termination Status @(Model.TerminationCount > 0 ? $"({Model.TerminationCount})" : "")
+    </a>
+
+    <a asp-action="Habits" class="btn w-100 wdk-habits-btn mb-3">
+        <i class="bi bi-clipboard-check me-1"></i>My Habits @(Model.Habits.Any() ? $"({Model.Habits.Count})" : "")
+        <i class="bi bi-chevron-right ms-1"></i>
+    </a>
+
+    <!-- Profile details (supplementary — phone/CNIC/gender & categories) -->
+    <div class="card-soft mb-3">
+        <div class="card-body">
+            <h6 class="fw-bold"><i class="bi bi-person-vcard me-1 text-brand"></i>Profile Details</h6>
+            <div class="d-flex flex-wrap gap-1 mb-2">
                 @foreach (var c in Model.Categories)
                 {
                     <span class="chip chip-blue">@c</span>
                 }
             </div>
-            <hr />
             <ul class="list-unstyled text-start small mb-0">
                 <li class="mb-2"><i class="bi bi-telephone me-2 text-brand"></i>@(Model.Phone ?? "N/A")</li>
                 <li class="mb-2"><i class="bi bi-person-badge me-2 text-brand"></i>@(Model.Cnic ?? "N/A")</li>
-                <li class="mb-2"><i class="bi bi-geo-alt me-2 text-brand"></i>@(Model.Address ?? "N/A")</li>
-                <li class="mb-2"><i class="bi bi-cash-coin me-2 text-brand"></i>@Model.Salary</li>
-                <li><i class="bi bi-gender-ambiguous me-2 text-brand"></i>@(Model.Gender ?? "N/A") @(Model.Age.HasValue ? $"· {Model.Age} yrs" : "")</li>
+                <li class="mb-2"><i class="bi bi-gender-ambiguous me-2 text-brand"></i>@(Model.Gender ?? "N/A") @(Model.Age.HasValue ? $"· {Model.Age} yrs" : "")</li>
+                <li><i class="bi bi-cash-coin me-2 text-brand"></i>@Model.Salary</li>
             </ul>
-        </div></div>
-
-        <!-- Duty status -->
-        <div class="card-soft mb-3"><div class="card-body">
-            <h6 class="fw-bold">Availability</h6>
-            <div class="form-check form-switch fs-5">
-                <input class="form-check-input" type="checkbox" id="dutyToggle" @(Model.AvailableStatus ? "checked" : "") />
-                <label class="form-check-label fs-6" for="dutyToggle" id="dutyLabel">
-                    @(Model.AvailableStatus ? "On Duty — available for hire" : "Off Duty — hidden from search")
-                </label>
-            </div>
-        </div></div>
-
-        <!-- Radius -->
-        <div class="card-soft"><div class="card-body">
-            <h6 class="fw-bold">Service Radius</h6>
-            <p class="small text-muted">Clients within this radius get part-time offers; beyond it, full-time.</p>
-            <input type="range" class="form-range" min="1" max="70" value="@Model.Radius" id="radiusRange" />
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="fw-bold text-brand"><span id="radiusVal">@Model.Radius</span> km</span>
-                <button class="btn btn-primary btn-sm" id="saveRadius">Save</button>
-            </div>
-        </div></div>
+        </div>
     </div>
 
-    <!-- Right: schedule + bio + reviews -->
-    <div class="col-lg-8">
-        <div class="card-soft mb-3"><div class="card-body">
-            <h6 class="fw-bold"><i class="bi bi-clock me-1 text-brand"></i>Time Slots</h6>
-            <p class="small text-muted">Add the time windows you're available for part-time work.</p>
-            <div class="row g-2 align-items-end mb-2">
-                <div class="col-5"><label class="small fw-semibold">Start</label><input type="time" id="slotStart" class="form-control" /></div>
-                <div class="col-5"><label class="small fw-semibold">End</label><input type="time" id="slotEnd" class="form-control" /></div>
-                <div class="col-2"><button class="btn btn-primary w-100" id="addSlot"><i class="bi bi-plus-lg"></i></button></div>
-            </div>
-            <div id="slotList" class="d-flex flex-wrap gap-2">
-                @foreach (var s in Model.Slots)
-                {
-                    <span class="chip chip-blue" data-id="@s.Id">
-                        <i class="bi bi-clock me-1"></i>@s.StartTime - @s.EndTime
-                        <button type="button" class="del-slot" data-id="@s.Id" style="border:none;background:none;color:inherit;cursor:pointer;">&times;</button>
-                    </span>
-                }
-                @if (!Model.Slots.Any())
-                {
-                    <span class="text-muted small" id="noSlots">No time slots yet.</span>
-                }
-            </div>
-        </div></div>
-
-        @if (!string.IsNullOrWhiteSpace(Model.Bio))
-        {
-            <div class="card-soft mb-3"><div class="card-body">
+    @if (!string.IsNullOrWhiteSpace(Model.Bio))
+    {
+        <div class="card-soft">
+            <div class="card-body">
                 <h6 class="fw-bold"><i class="bi bi-person-lines-fill me-1 text-brand"></i>About Me</h6>
                 <p class="mb-0 text-muted">@Model.Bio</p>
-            </div></div>
-        }
+            </div>
+        </div>
+    }
+</div>
 
-        <div class="card-soft mb-3"><div class="card-body">
-            <h6 class="fw-bold"><i class="bi bi-briefcase me-1 text-brand"></i>Experience</h6>
-            @if (!Model.Experiences.Any())
+@* ───────────────────────── SKILLS ───────────────────────── *@
+<div class="wdk-pane d-none" data-pane="Skills">
+    <div class="card-soft">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-3 flex-wrap mb-3">
+                <div class="flex-grow-1">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-award me-1 text-brand"></i>Professional Skills</h6>
+                    <small class="text-muted">Your primary and secondary service expertise</small>
+                </div>
+                <a asp-action="EditProfile" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-pencil me-1"></i>Edit
+                </a>
+            </div>
+            <hr />
+
+            <div class="small fw-bold mb-1">Primary Service</div>
+            <div class="text-muted small mb-2">Your main professional category</div>
+            <span class="chip text-white" style="background:#1565C0; padding:.45rem .9rem; font-size:.95rem;">@Model.PrimaryRole</span>
+
+            <div class="small fw-bold mt-4 mb-2">Primary Skills</div>
+            @if (Model.PrimarySkills.Any())
             {
-                <p class="text-muted mb-0">No experience listed.</p>
+                <div class="d-flex flex-wrap gap-2 mb-4">
+                    @foreach (var s in Model.PrimarySkills)
+                    {
+                        <span class="chip" style="background:#EAF3FF; border:1px solid #BFDBFE; color:#0D47A1;">
+                            <i class="bi bi-check-decagram me-1"></i>@s
+                        </span>
+                    }
+                </div>
             }
             else
             {
-                foreach (var e in Model.Experiences)
+                <p class="text-muted small">No primary skills added.</p>
+            }
+
+            <hr />
+            <div class="small fw-bold mt-3 mb-1">Secondary / Part-Time Services</div>
+            <div class="text-muted small mb-2">Additional categories and services you can provide</div>
+            @if (Model.PartTimeSkills.Any())
+            {
+                foreach (var g in Model.PartTimeSkills)
                 {
-                    <div class="border-start border-3 border-primary ps-3 mb-2">
-                        <div class="fw-semibold">@e.WorkAt <span class="text-muted fw-normal small">· @e.Duration</span></div>
-                        <div class="text-muted small">@e.ExpDetail</div>
+                    <div class="rounded p-3 mb-2" style="background:#F8FAFC; border:1px solid #E2E8F0;">
+                        <div class="fw-bold small mb-2"><i class="bi bi-briefcase me-1 text-brand"></i>@g.CategoryName</div>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var s in g.Skills)
+                            {
+                                <span class="chip" style="background:#fff; border:1px solid #D9E5F3; color:#475569;">@s</span>
+                            }
+                        </div>
                     </div>
                 }
             }
-        </div></div>
-
-        @if (Model.Habits.Any())
-        {
-            <div class="card-soft mb-3"><div class="card-body">
-                <h6 class="fw-bold"><i class="bi bi-stars me-1 text-brand"></i>My Habits</h6>
-                <div class="d-flex flex-wrap gap-1">
-                    @foreach (var h in Model.Habits)
-                    {
-                        <span class="chip chip-green">@h</span>
-                    }
+            else
+            {
+                <div class="text-center py-4">
+                    <i class="bi bi-briefcase-off" style="font-size:2rem; color:#CBD5E1;"></i>
+                    <p class="text-muted small mt-2 mb-0">No secondary services added.</p>
                 </div>
-            </div></div>
-        }
+            }
+        </div>
+    </div>
+</div>
 
-        <div class="card-soft"><div class="card-body">
-            <h6 class="fw-bold"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Reviews (@Model.ReviewCount)</h6>
+@* ───────────────────────── TIME SLOTS ───────────────────────── *@
+<div class="wdk-pane d-none" data-pane="TimeSlots">
+    <div class="card-soft">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div class="flex-grow-1">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-clock me-1 text-brand"></i>Weekly Availability</h6>
+                    <small class="text-muted">Manage your free working hours</small>
+                </div>
+            </div>
+            <div class="row g-2 align-items-end my-3">
+                <div class="col-sm-4"><label class="small fw-semibold">Start</label><input type="time" id="slotStart" class="form-control" /></div>
+                <div class="col-sm-4"><label class="small fw-semibold">End</label><input type="time" id="slotEnd" class="form-control" /></div>
+                <div class="col-sm-4"><button class="btn btn-primary w-100" id="addSlot"><i class="bi bi-plus-lg me-1"></i>Add Slot</button></div>
+            </div>
+            <div id="slotList">
+                @foreach (var s in Model.Slots)
+                {
+                    <div class="wdk-slot" data-id="@s.Id">
+                        <span class="wdk-green-dot"></span>
+                        <div class="flex-grow-1 ms-2">
+                            <div class="fw-bold small">@s.StartTime - @s.EndTime</div>
+                            <div class="text-muted" style="font-size:.72rem;">Available Shift</div>
+                        </div>
+                        <button type="button" class="del-slot btn btn-link text-muted p-0" data-id="@s.Id" title="Delete slot"><i class="bi bi-trash"></i></button>
+                    </div>
+                }
+                @if (!Model.Slots.Any())
+                {
+                    <div class="text-center py-4" id="noSlots">
+                        <i class="bi bi-clock" style="font-size:2.2rem; color:#D1D1D6;"></i>
+                        <div class="text-muted small mt-2">No available time slots yet.</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ───────────────────────── EXPERIENCE ───────────────────────── *@
+<div class="wdk-pane d-none" data-pane="Experience">
+    <div class="card-soft">
+        <div class="card-body">
+            <h6 class="fw-bold"><i class="bi bi-briefcase me-1 text-brand"></i>Experience History</h6>
+            @if (!Model.Experiences.Any())
+            {
+                <p class="text-muted mb-0">No experiences recorded.</p>
+            }
+            else
+            {
+                for (int i = 0; i < Model.Experiences.Count; i++)
+                {
+                    var e = Model.Experiences[i];
+                    <div class="d-flex wdk-exp-item">
+                        <div class="d-flex flex-column align-items-center me-3">
+                            <span class="wdk-exp-dot @(i == 0 ? "wdk-exp-dot-active" : "")"></span>
+                            <span class="wdk-exp-line"></span>
+                        </div>
+                        <div class="flex-grow-1 pb-3">
+                            <div class="fw-bold small">@(e.WorkAt ?? "Previous Role")</div>
+                            @if (!string.IsNullOrWhiteSpace(e.ExpDetail))
+                            {
+                                <div class="text-muted" style="font-size:.8rem;">• @e.ExpDetail</div>
+                            }
+                            <div class="text-muted" style="font-size:.75rem;">@(e.Duration ?? "N/A")</div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@* ───────────────────────── REVIEWS ───────────────────────── *@
+<div class="wdk-pane d-none" data-pane="Reviews">
+    <div class="card-soft">
+        <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <h6 class="fw-bold mb-0"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Customer Reviews</h6>
+                <span class="wdk-rating-badge">
+                    <i class="bi bi-star-fill" style="color:#FFD700;"></i>
+                    <span class="fw-bold">@Model.Rating.ToString("F1")</span>
+                    <span class="text-muted small">(@Model.ReviewCount)</span>
+                </span>
+            </div>
+            <hr />
             @if (!Model.Reviews.Any())
             {
-                <p class="text-muted mb-0">No reviews yet.</p>
+                <div class="text-center py-4">
+                    <i class="bi bi-chat-square-text" style="font-size:2.2rem; color:#D1D1D6;"></i>
+                    <div class="text-muted small mt-2">No reviews found yet.</div>
+                </div>
             }
             else
             {
                 foreach (var r in Model.Reviews)
                 {
-                    <div class="border-bottom py-2">
-                        <div class="d-flex justify-content-between">
-                            <span class="stars">
-                                @for (int i = 1; i <= 5; i++)
-                                {
-                                    <i class="bi @(i <= r.Rating ? "bi-star-fill" : "bi-star")"></i>
-                                }
-                            </span>
-                            <small class="text-muted">@r.ReviewDate · @r.ReviewerRole</small>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(r.Comment))
-                        {
-                            <div class="small mt-1">@r.Comment</div>
-                        }
-                    </div>
+                    <partial name="_ReviewCard" model="r" />
                 }
             }
-        </div></div>
+        </div>
     </div>
 </div>
 
+@section Styles {
+    <style>
+        /* Header (RN fixedHeader) */
+        .wdk-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 26px;
+            object-fit: cover;
+            border: 1.5px solid #1E64D3;
+            flex: 0 0 auto;
+        }
+
+        .wdk-avatar-ph {
+            background: #EBF3FF;
+            display: grid;
+            place-items: center;
+            color: #1E64D3;
+            font-size: 1.4rem;
+            border: 1px solid #1E64D3;
+        }
+
+        .wdk-greeting {
+            font-size: .72rem;
+            font-weight: 700;
+            color: #8E8E93;
+            letter-spacing: .5px;
+        }
+
+        .wdk-header-name {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #1C1C1E;
+        }
+
+        .wdk-role {
+            font-size: .9rem;
+            font-weight: 700;
+            color: #1E64D3;
+        }
+
+        .wdk-age {
+            font-size: .82rem;
+            color: #8E8E93;
+        }
+
+        .wdk-edit-pill {
+            background: #F0F0F2;
+            color: #3A3A3C;
+            border-radius: 16px;
+            font-weight: 600;
+        }
+
+        .wdk-info-bar {
+            display: flex;
+            align-items: stretch;
+            background: #F0F4F8;
+            border-radius: 12px;
+            padding: .75rem;
+        }
+
+        .wdk-info-col {
+            flex: 1;
+            text-align: center;
+        }
+
+        .wdk-info-label {
+            font-size: .66rem;
+            color: #8E8E93;
+            font-weight: 800;
+            letter-spacing: .5px;
+        }
+
+        .wdk-info-value {
+            font-size: .78rem;
+            font-weight: 700;
+            color: #1C1C1E;
+            margin-top: .15rem;
+        }
+
+        .wdk-info-sub {
+            font-size: .66rem;
+            color: #8E8E93;
+        }
+
+        .wdk-v-divider {
+            width: 1px;
+            background: #D1D1D6;
+            margin: 0 .5rem;
+        }
+
+        /* Underline tabs (RN underlineTabContainer) */
+        .wdk-tabs {
+            display: flex;
+            border-bottom: 2px solid #E5E5EA;
+            margin-bottom: 1.1rem;
+        }
+
+        .wdk-tab {
+            flex: 1;
+            border: 0;
+            background: transparent;
+            padding: .65rem .3rem;
+            font-weight: 600;
+            font-size: .84rem;
+            color: #8E8E93;
+            cursor: pointer;
+            border-bottom: 2.5px solid transparent;
+            margin-bottom: -2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .35rem;
+        }
+
+            .wdk-tab.active {
+                color: #1E64D3;
+                font-weight: 800;
+                border-bottom-color: #1E64D3;
+            }
+
+        .wdk-count {
+            background: #E2E8F0;
+            color: #475569;
+            border-radius: 8px;
+            font-size: .68rem;
+            padding: 0 .4rem;
+            font-weight: 800;
+        }
+
+        .wdk-tab.active .wdk-count {
+            background: #EAF2FF;
+            color: #1E64D3;
+        }
+
+        /* Overview widgets */
+        .wdk-icon-circle {
+            width: 36px;
+            height: 36px;
+            border-radius: 18px;
+            background: #F0F4FF;
+            display: grid;
+            place-items: center;
+            color: #1E64D3;
+            flex: 0 0 auto;
+        }
+
+        .wdk-rad-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 18px;
+            border: 0;
+            background: #EBF3FF;
+            color: #1E64D3;
+            display: grid;
+            place-items: center;
+        }
+
+            .wdk-rad-btn:disabled {
+                background: #F2F2F7;
+                color: #C7C7CC;
+            }
+
+        .wdk-rad-track {
+            flex: 1;
+            height: 8px;
+            background: #E5E5EA;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .wdk-rad-fill {
+            height: 100%;
+            background: #1E64D3;
+            border-radius: 4px;
+            transition: width .15s ease;
+        }
+
+        .wdk-red-badge {
+            background: #E53935;
+            color: #fff;
+            min-width: 22px;
+            height: 22px;
+            border-radius: 11px;
+            display: inline-grid;
+            place-items: center;
+            font-size: .72rem;
+            font-weight: 800;
+            padding: 0 .35rem;
+        }
+
+        .wdk-resign-btn {
+            background: #fff;
+            border: 1px solid #FF4D4D;
+            color: #FF4D4D;
+            font-weight: 700;
+            border-radius: 21px;
+        }
+
+            .wdk-resign-btn:hover {
+                background: #FFF5F5;
+                color: #FF4D4D;
+            }
+
+        .wdk-termination-btn {
+            background: #FF3B30;
+            color: #fff;
+            font-weight: 700;
+            border-radius: 22px;
+            border: 0;
+        }
+
+            .wdk-termination-btn:hover {
+                background: #E0342B;
+                color: #fff;
+            }
+
+        .wdk-habits-btn {
+            background: #EEF4FF;
+            border: 1px solid #D8E6FF;
+            color: #1E64D3;
+            font-weight: 700;
+            border-radius: 22px;
+        }
+
+            .wdk-habits-btn:hover {
+                background: #E2EDFF;
+                color: #1E64D3;
+            }
+
+        /* Time slots (RN slotRowCard) */
+        .wdk-slot {
+            display: flex;
+            align-items: center;
+            background: #F9FAFB;
+            padding: .75rem;
+            border-radius: 12px;
+            margin-bottom: .5rem;
+        }
+
+        .wdk-green-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: #34C759;
+            flex: 0 0 auto;
+        }
+
+        /* Experience timeline (RN ExperienceItem) */
+        .wdk-exp-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background: #CCC;
+            margin-top: .2rem;
+        }
+
+        .wdk-exp-dot-active {
+            background: #1E64D3;
+        }
+
+        .wdk-exp-line {
+            flex: 1;
+            width: 2px;
+            background: #E5E5EA;
+            margin-top: .15rem;
+            min-height: 26px;
+        }
+
+        /* Reviews (RN inlineReviewCard) */
+        .wdk-rating-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .3rem;
+            background: #FFF8E7;
+            padding: .25rem .6rem;
+            border-radius: 12px;
+        }
+
+        .wdk-review-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: #EBF3FF;
+            color: #1E64D3;
+            display: inline-grid;
+            place-items: center;
+            font-weight: 800;
+            font-size: .85rem;
+            flex: 0 0 auto;
+        }
+    </style>
+}
+
 @section Scripts {
     <script>
-        // Duty toggle
+        // Tab switching (Overview | Skills | Time Slots | Experience | Reviews)
+        document.querySelectorAll('.wdk-tab').forEach(function (t) {
+            t.addEventListener('click', function () {
+                document.querySelectorAll('.wdk-tab').forEach(function (x) { x.classList.remove('active'); });
+                document.querySelectorAll('.wdk-pane').forEach(function (p) { p.classList.add('d-none'); });
+                t.classList.add('active');
+                var pane = document.querySelector('.wdk-pane[data-pane="' + t.getAttribute('data-tab') + '"]');
+                if (pane) pane.classList.remove('d-none');
+            });
+        });
+
+        // Duty toggle → UpdateDutyStatus
         document.getElementById('dutyToggle').addEventListener('change', async function () {
             var on = this.checked;
             var res = await postJson('@Url.Action("UpdateDutyStatus", "Worker")', { value: on });
             if (res.ok) {
-                document.getElementById('dutyLabel').textContent = on ? 'On Duty — available for hire' : 'Off Duty — hidden from search';
+                document.getElementById('dutyBadge').textContent = on ? 'Online' : 'Offline';
+                document.getElementById('dutyLabel').textContent = on ? 'You are currently visible to customers' : 'You are currently hidden';
             } else { this.checked = !on; alert('Could not update status.'); }
         });
 
-        // Radius
-        var range = document.getElementById('radiusRange');
-        range.addEventListener('input', function () { document.getElementById('radiusVal').textContent = this.value; });
-        document.getElementById('saveRadius').addEventListener('click', async function () {
-            var res = await postJson('@Url.Action("UpdateRadius", "Worker")', { value: parseInt(range.value) });
-            if (res.ok) { this.textContent = 'Saved ✔'; var b = this; setTimeout(function () { b.textContent = 'Save'; }, 1500); }
-            else { alert(res.message || 'Could not save radius.'); }
-        });
+        // Radius −/＋ buttons → UpdateRadius (RN: 1–70 km, live track fill)
+        var radVal = @(Model.Radius);
+        var radFill = document.getElementById('radFill');
+        var radBadge = document.getElementById('radBadge');
+        var radMinus = document.getElementById('radMinus');
+        var radPlus = document.getElementById('radPlus');
 
-        // Slots
+        function paintRadius() {
+            radBadge.textContent = radVal + ' km';
+            radFill.style.width = Math.min(100, radVal * 100 / 70) + '%';
+            radMinus.disabled = radVal <= 1;
+            radPlus.disabled = radVal >= 70;
+        }
+        async function saveRadius(next) {
+            var res = await postJson('@Url.Action("UpdateRadius", "Worker")', { value: next });
+            if (res.ok) { radVal = next; paintRadius(); }
+            else { alert(res.message || 'Could not save radius.'); }
+        }
+        radMinus.addEventListener('click', function () { if (radVal > 1) saveRadius(radVal - 1); });
+        radPlus.addEventListener('click', function () { if (radVal < 70) saveRadius(radVal + 1); });
+        paintRadius();
+
+        // Time slots
+        function slotRowHtml(id, startTime, endTime) {
+            return '<div class="wdk-slot" data-id="' + id + '">' +
+                '<span class="wdk-green-dot"></span>' +
+                '<div class="flex-grow-1 ms-2"><div class="fw-bold small">' + startTime + ' - ' + endTime + '</div>' +
+                '<div class="text-muted" style="font-size:.72rem;">Available Shift</div></div>' +
+                '<button type="button" class="del-slot btn btn-link text-muted p-0" data-id="' + id + '" title="Delete slot"><i class="bi bi-trash"></i></button></div>';
+        }
         function bindDelete(btn) {
             btn.addEventListener('click', async function () {
                 var id = parseInt(this.getAttribute('data-id'));
                 var res = await postJson('@Url.Action("DeleteTimeSlot", "Worker")', { value: id });
-                if (res.ok) { var chip = this.closest('.chip'); if (chip) chip.remove(); }
+                if (res.ok) { var row = this.closest('.wdk-slot'); if (row) row.remove(); }
                 else { alert('Could not delete slot.'); }
             });
         }
@@ -202,12 +755,10 @@
             var res = await postJson('@Url.Action("AddTimeSlot", "Worker")', { startTime: s, endTime: e });
             if (res.ok) {
                 var noSlots = document.getElementById('noSlots'); if (noSlots) noSlots.remove();
-                var chip = document.createElement('span');
-                chip.className = 'chip chip-blue'; chip.setAttribute('data-id', res.id);
-                chip.innerHTML = '<i class="bi bi-clock me-1"></i>' + res.startTime + ' - ' + res.endTime +
-                    ' <button type="button" class="del-slot" data-id="' + res.id + '" style="border:none;background:none;color:inherit;cursor:pointer;">&times;</button>';
-                document.getElementById('slotList').appendChild(chip);
-                bindDelete(chip.querySelector('.del-slot'));
+                var wrap = document.createElement('div'); wrap.innerHTML = slotRowHtml(res.id, res.startTime, res.endTime);
+                var row = wrap.firstElementChild;
+                document.getElementById('slotList').appendChild(row);
+                bindDelete(row.querySelector('.del-slot'));
                 document.getElementById('slotStart').value = ''; document.getElementById('slotEnd').value = '';
             } else { alert(res.message || 'Could not add slot.'); }
         });

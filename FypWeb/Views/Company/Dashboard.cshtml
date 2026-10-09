@@ -1,0 +1,118 @@
+@model CompanyDashboardVM
+@{
+    ViewData["Title"] = "Company Dashboard";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+}
+
+<div class="card-soft mb-4" style="border-radius:22px;">
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-4">
+            <div style="width:39px;height:39px;border-radius:12px;background:#EAF3FF;color:#1565C0;display:grid;place-items:center;">
+                <i class="bi bi-building"></i>
+            </div>
+            <div class="flex-grow-1 fw-bold" style="color:#1565C0;font-size:.75rem;letter-spacing:.1em;">COMPANY DASHBOARD</div>
+            <form asp-controller="Account" asp-action="Logout" method="post" class="m-0">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-sm" style="background:#FEF2F2;color:#B91C1C;" title="Log out">
+                    <i class="bi bi-box-arrow-left"></i>
+                </button>
+            </form>
+        </div>
+
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="position-relative">
+                @if (pic != null)
+                {
+                    <img src="@pic" alt="@Model.CompanyName" style="width:75px;height:75px;border-radius:22px;object-fit:cover;"
+                         onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                    <div style="width:75px;height:75px;border-radius:22px;background:#EAF3FF;color:#1565C0;display:none;place-items:center;font-size:1.7rem;" class="position-relative">
+                        <i class="bi bi-building"></i>
+                    </div>
+                }
+                else
+                {
+                    <div style="width:75px;height:75px;border-radius:22px;background:#EAF3FF;color:#1565C0;display:grid;place-items:center;font-size:1.7rem;">
+                        <i class="bi bi-building"></i>
+                    </div>
+                }
+                <span style="position:absolute;right:-3px;bottom:-3px;width:23px;height:23px;border-radius:50%;background:#16865C;border:3px solid #fff;display:grid;place-items:center;color:#fff;font-size:.65rem;">
+                    <i class="bi bi-check"></i>
+                </span>
+            </div>
+            <div class="flex-grow-1">
+                <h4 class="fw-bold mb-1">@Model.CompanyName</h4>
+                <div class="fw-bold" style="color:#1565C0;font-size:.8rem;">@Model.LicenseNumber</div>
+                <div class="text-muted small">@Model.CompanyAddress</div>
+            </div>
+            <a asp-action="EditProfile" class="btn btn-sm" style="background:#EAF3FF;color:#1565C0;font-weight:700;">
+                <i class="bi bi-pencil me-1"></i>Edit
+            </a>
+        </div>
+    </div>
+</div>
+
+<h6 class="fw-bold mb-3">Overview</h6>
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="card-soft h-100"><div class="card-body">
+            <div style="width:39px;height:39px;border-radius:12px;background:#EAF3FF;color:#1565C0;display:grid;place-items:center;">
+                <i class="bi bi-book"></i>
+            </div>
+            <div class="fw-bold" style="font-size:1.7rem;margin-top:.7rem;">@Model.TotalCourses</div>
+            <div class="fw-bold" style="font-size:.85rem;">Total Courses</div>
+            <div class="text-muted" style="font-size:.75rem;">@Model.ActiveCourses active</div>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card-soft h-100"><div class="card-body">
+            <div style="width:39px;height:39px;border-radius:12px;background:#E7F7F0;color:#16865C;display:grid;place-items:center;">
+                <i class="bi bi-people"></i>
+            </div>
+            <div class="fw-bold" style="font-size:1.7rem;margin-top:.7rem;">@Model.UniqueEnrolledWorkers</div>
+            <div class="fw-bold" style="font-size:.85rem;">Enrolled Workers</div>
+            <div class="text-muted" style="font-size:.75rem;">@Model.TotalEnrollments enrollments</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="card-soft mb-4">
+    <div class="card-body d-flex align-items-center gap-3">
+        <div style="width:46px;height:46px;border-radius:14px;background:#EAF3FF;color:#1565C0;display:grid;place-items:center;font-size:1.3rem;">
+            <i class="bi bi-award"></i>
+        </div>
+        <div class="flex-grow-1">
+            <div class="fw-bold">Training completions</div>
+            <div class="text-muted small">@Model.CompletedEnrollments course enrollments completed and eligible for certification.</div>
+        </div>
+        <div class="fw-bold" style="color:#1565C0;font-size:1.4rem;">@Model.CompletedEnrollments</div>
+    </div>
+</div>
+
+<h6 class="fw-bold mb-3">Manage</h6>
+<a asp-action="Courses" class="d-block text-decoration-none mb-3"
+   style="background:#1565C0;border-radius:18px;padding:16px;color:#fff;">
+    <div class="d-flex align-items-center gap-3">
+        <div style="width:50px;height:50px;border-radius:15px;background:rgba(255,255,255,.16);display:grid;place-items:center;font-size:1.4rem;">
+            <i class="bi bi-mortarboard"></i>
+        </div>
+        <div class="flex-grow-1">
+            <div class="fw-bold" style="font-size:1.05rem;">Course Management</div>
+            <small style="color:#DCEBFF;">Create courses, manage enrolled workers and issue certificates.</small>
+        </div>
+        <i class="bi bi-chevron-right" style="font-size:1.4rem;"></i>
+    </div>
+</a>
+
+<a asp-action="Directory" class="d-block text-decoration-none"
+   style="background:#fff;border:1px solid #D9E5F3;border-radius:18px;padding:16px;color:#172033;">
+    <div class="d-flex align-items-center gap-3">
+        <div style="width:50px;height:50px;border-radius:15px;background:#EAF3FF;color:#1565C0;display:grid;place-items:center;font-size:1.4rem;">
+            <i class="bi bi-people"></i>
+        </div>
+        <div class="flex-grow-1">
+            <div class="fw-bold" style="font-size:1.05rem;">Worker Directory</div>
+            <small style="color:#64748B;">Browse workers and issue legacy skill certificates.</small>
+        </div>
+        <i class="bi bi-chevron-right" style="font-size:1.4rem;color:#64748B;"></i>
+    </div>
+</a>

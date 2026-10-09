@@ -1,0 +1,333 @@
+@{
+    ViewData["Title"] = "Skills & Experience";
+    // Pre-auth (signup flow) uses the auth shell; a signed-in worker editing
+    // their profile gets the normal app shell.
+    Layout = User.Identity?.IsAuthenticated == true ? "_Layout" : "_AuthLayout";
+    var categories = ViewBag.Categories as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    var returnTo = ViewBag.ReturnTo as string ?? "signup";
+}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnBack"><i class="bi bi-arrow-left"></i></button>
+    <div>
+        <h4 class="mb-0 fw-bold">Skills &amp; Experience</h4>
+        <small class="text-muted">Pick your services and list your past work.</small>
+    </div>
+</div>
+
+<div class="card-soft mb-3">
+    <div class="card-body">
+        <h6 class="fw-bold"><i class="bi bi-shapes me-1 text-brand"></i>Select Categories &amp; Sub-Skills</h6>
+
+        <div class="mt-3">
+            <div class="small fw-semibold mb-2">Primary Category <span class="text-danger">(select 1)</span></div>
+            <div class="d-flex flex-wrap gap-2" id="primaryRow">
+                @foreach (var c in categories)
+                {
+                    <button type="button" class="chip chip-select" data-id="@c.CategoryId" data-name="@c.CategoryName" data-kind="primary">
+                        <i class="bi bi-briefcase me-1"></i>@c.CategoryName
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <div class="small fw-semibold mb-2">Secondary Categories <span class="text-muted small">(optional)</span></div>
+            <div class="d-flex flex-wrap gap-2" id="secondaryRow">
+                @foreach (var c in categories)
+                {
+                    <button type="button" class="chip chip-select" data-id="@c.CategoryId" data-name="@c.CategoryName" data-kind="secondary">
+                        <i class="bi bi-briefcase me-1"></i>@c.CategoryName
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div id="subSkillsWrap" class="mt-3"></div>
+    </div>
+</div>
+
+<div class="card-soft mb-3">
+    <div class="card-body">
+        <h6 class="fw-bold"><i class="bi bi-briefcase me-1 text-brand"></i>Work Experience <span class="text-muted small fw-normal">(optional)</span></h6>
+
+        <div id="expList" class="mt-3"></div>
+
+        <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Working Since</label>
+                <input type="date" class="form-control" id="expSince" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                <div class="form-text" id="expDurationHint"></div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Workplace / Company</label>
+                <input type="text" class="form-control" id="expWorkAt" placeholder="Where did you work? (e.g. PC Hotel)" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Role / Description</label>
+                <input type="text" class="form-control" id="expDetail" placeholder="What did you do?" />
+            </div>
+        </div>
+        <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="btnAddExp"><i class="bi bi-plus-lg me-1"></i>Add experience</button>
+    </div>
+</div>
+
+<div class="d-flex gap-2 mb-4">
+    <button type="button" class="btn btn-primary px-4" id="btnSave"><i class="bi bi-check-lg me-1"></i>Save &amp; Go Back</button>
+    <button type="button" class="btn btn-outline-secondary" id="btnBack2">Cancel</button>
+</div>
+
+@section Scripts {
+    <style>
+        .chip-select {
+            background: #F5F7FB;
+            border: 1px solid #D9E5F3;
+            color: #333;
+            border-radius: 18px;
+            padding: 7px 13px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+            .chip-select.on {
+                background: #1E64D3;
+                border-color: #1E64D3;
+                color: #fff;
+            }
+
+            .chip-select:disabled {
+                opacity: .45;
+                cursor: not-allowed;
+            }
+
+        .skill-chip {
+            background: #fff;
+            border: 1px solid #D9E5F3;
+            color: #475569;
+            border-radius: 16px;
+            padding: 6px 11px;
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+            .skill-chip.on {
+                background: #1565C0;
+                border-color: #1565C0;
+                color: #fff;
+            }
+
+        .subcat-box {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 13px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+    </style>
+    <script>
+        (function () {
+            var STORE_KEY = 'fypAddSkills';
+            var state = { primary: null, secondary: [], skills: [], experiences: [] };
+            var subCache = {};   // categoryId -> [{id, name}]
+            var subLoaded = {};
+
+            // ── prefill from the calling form (or a previous visit) ──
+            try {
+                var saved = JSON.parse(sessionStorage.getItem(STORE_KEY) || 'null');
+                if (saved) {
+                    state.primary = saved.primary || null;
+                    state.secondary = saved.secondary || [];
+                    state.skills = saved.skills || [];
+                    state.experiences = saved.experiences || [];
+                }
+            } catch (e) { /* ignore corrupt draft */ }
+
+            var primaryRow = document.getElementById('primaryRow');
+            var secondaryRow = document.getElementById('secondaryRow');
+            var wrap = document.getElementById('subSkillsWrap');
+
+            function activeCategories() {
+                var all = Array.prototype.slice.call(primaryRow.querySelectorAll('[data-kind="primary"]'))
+                    .map(function (b) { return { id: +b.getAttribute('data-id'), name: b.getAttribute('data-name') }; });
+                var act = [];
+                if (state.primary) {
+                    var p = all.find(function (c) { return c.id === state.primary; });
+                    if (p) act.push(p);
+                }
+                state.secondary.forEach(function (id) {
+                    var c = all.find(function (x) { return x.id === id; });
+                    if (c && !act.some(function (a) { return a.id === id; })) act.push(c);
+                });
+                return act;
+            }
+
+            function paintCategories() {
+                primaryRow.querySelectorAll('button').forEach(function (b) {
+                    b.classList.toggle('on', +b.getAttribute('data-id') === state.primary);
+                });
+                secondaryRow.querySelectorAll('button').forEach(function (b) {
+                    var id = +b.getAttribute('data-id');
+                    b.classList.toggle('on', state.secondary.indexOf(id) >= 0);
+                    b.disabled = (id === state.primary);
+                });
+            }
+
+            function loadSubs(catId) {
+                if (subLoaded[catId]) return Promise.resolve();
+                return fetch('/Account/SkillsByCategory?categoryId=' + catId)
+                    .then(function (r) { return r.json(); })
+                    .then(function (list) {
+                        subCache[catId] = (list || []).map(function (s) { return { id: s.skillsId, name: s.skillName }; });
+                        subLoaded[catId] = true;
+                    });
+            }
+
+            function paintSubs() {
+                var act = activeCategories();
+                wrap.innerHTML = '';
+                if (!act.length) {
+                    wrap.innerHTML = '<p class="text-muted small mb-0">Select a category to see its sub-skills.</p>';
+                    return;
+                }
+                act.forEach(function (cat) {
+                    var box = document.createElement('div');
+                    box.className = 'subcat-box';
+                    var head = document.createElement('div');
+                    head.className = 'small fw-bold mb-2';
+                    head.innerHTML = '<i class="bi bi-collection me-1 text-brand"></i>' + cat.name + ' sub-skills';
+                    box.appendChild(head);
+                    var chipRow = document.createElement('div');
+                    chipRow.className = 'd-flex flex-wrap gap-2';
+                    chipRow.setAttribute('data-cat', cat.id);
+                    box.appendChild(chipRow);
+                    wrap.appendChild(box);
+
+                    loadSubs(cat.id).then(function () { paintChips(chipRow, cat.id); });
+                    paintChips(chipRow, cat.id);
+                });
+            }
+
+            function paintChips(row, catId) {
+                var list = subCache[catId] || [];
+                row.innerHTML = '';
+                list.forEach(function (s) {
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'skill-chip' + (isPicked(catId, s.id) ? ' on' : '');
+                    b.innerHTML = (isPicked(catId, s.id) ? '<i class="bi bi-check-circle me-1"></i>' : '<i class="bi bi-plus-circle me-1"></i>') + s.name;
+                    b.addEventListener('click', function () { toggleSkill(catId, s.id, s.name); });
+                    row.appendChild(b);
+                });
+                if (!list.length) row.innerHTML = '<span class="text-muted small">No sub-skills defined for this category.</span>';
+            }
+
+            function skillName(catId, id) {
+                var l = subCache[catId] || [];
+                for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i].name;
+                return '';
+            }
+            function isPicked(catId, skillId) {
+                return state.skills.some(function (s) { return s.CategoryId === catId && s.SkillsId === skillId; });
+            }
+            function toggleSkill(catId, skillId) {
+                if (isPicked(catId, skillId)) {
+                    state.skills = state.skills.filter(function (s) { return !(s.CategoryId === catId && s.SkillsId === skillId); });
+                } else {
+                    var catBtn = primaryRow.querySelector('[data-id="' + catId + '"]');
+                    state.skills.push({ CategoryId: catId, SkillsId: skillId, CategoryName: catBtn ? catBtn.getAttribute('data-name') : '', SkillName: skillName(catId, skillId) });
+                }
+                wrap.querySelectorAll('[data-cat]').forEach(function (row) { paintChips(row, +row.getAttribute('data-cat')); });
+            }
+
+            primaryRow.addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-kind="primary"]');
+                if (!b) return;
+                var id = +b.getAttribute('data-id');
+                state.primary = (state.primary === id) ? null : id;
+                state.secondary = state.secondary.filter(function (s) { return s !== state.primary; });
+                paintCategories(); paintSubs();
+            });
+            secondaryRow.addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-kind="secondary"]');
+                if (!b || b.disabled) return;
+                var id = +b.getAttribute('data-id');
+                var i = state.secondary.indexOf(id);
+                if (i >= 0) state.secondary.splice(i, 1); else state.secondary.push(id);
+                paintCategories(); paintSubs();
+            });
+
+            // ── experience ──
+            function durationSince(dateStr) {
+                if (!dateStr) return '';
+                var start = new Date(dateStr), end = new Date();
+                var years = end.getFullYear() - start.getFullYear();
+                var months = end.getMonth() - start.getMonth();
+                if (months < 0) { years--; months += 12; }
+                if (years > 0 && months > 0) return years + ' Years, ' + months + ' Months';
+                if (years > 0) return years + ' ' + (years === 1 ? 'Year' : 'Years');
+                return months + ' ' + (months === 1 ? 'Month' : 'Months');
+            }
+
+            function paintExps() {
+                var box = document.getElementById('expList');
+                box.innerHTML = '';
+                if (!state.experiences.length) return;
+                var head = document.createElement('div');
+                head.className = 'small fw-bold text-muted mb-2';
+                head.textContent = 'ADDED EXPERIENCES (' + state.experiences.length + ')';
+                box.appendChild(head);
+                state.experiences.forEach(function (exp, i) {
+                    var div = document.createElement('div');
+                    div.className = 'card-soft mb-2';
+                    div.innerHTML = '<div class="card-body py-2 d-flex justify-content-between align-items-center">' +
+                        '<div><div class="fw-semibold">' + (exp.WorkAt || '') + '</div>' +
+                        '<small class="text-muted">' + (exp.Duration || '') + '</small>' +
+                        (exp.ExpDetail ? '<div class="small text-muted mt-1">' + exp.ExpDetail + '</div>' : '') +
+                        '</div><button type="button" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-lg"></i></button></div>';
+                    div.querySelector('button').addEventListener('click', function () { state.experiences.splice(i, 1); paintExps(); });
+                    box.appendChild(div);
+                });
+            }
+
+            document.getElementById('expSince').addEventListener('change', function () {
+                document.getElementById('expDurationHint').textContent = this.value ? 'Duration: ' + durationSince(this.value) : '';
+            });
+
+            document.getElementById('btnAddExp').addEventListener('click', function () {
+                var since = document.getElementById('expSince').value;
+                var workAt = document.getElementById('expWorkAt').value.trim();
+                var detail = document.getElementById('expDetail').value.trim();
+                if (!workAt || !since) { alert('Please fill the workplace and the working-since date.'); return; }
+                state.experiences.push({ WorkAt: workAt, ExpDetail: detail, Duration: durationSince(since) });
+                document.getElementById('expSince').value = '';
+                document.getElementById('expWorkAt').value = '';
+                document.getElementById('expDetail').value = '';
+                document.getElementById('expDurationHint').textContent = '';
+                paintExps();
+            });
+
+            // ── save / back ──
+            function goBack() { window.history.back(); }
+            document.getElementById('btnBack').addEventListener('click', goBack);
+            document.getElementById('btnBack2').addEventListener('click', goBack);
+
+            document.getElementById('btnSave').addEventListener('click', function () {
+                if (!state.primary) { alert('Please select a Primary Category.'); return; }
+                if (!state.skills.length) { alert('Please select at least one sub-skill chip to proceed.'); return; }
+                // Remember names for display on the calling form.
+                state.skills.forEach(function (s) { if (!s.SkillName) s.SkillName = skillName(s.CategoryId, s.SkillsId); });
+                var primaryBtn = primaryRow.querySelector('[data-id="' + state.primary + '"]');
+                state.primaryName = primaryBtn ? primaryBtn.getAttribute('data-name') : '';
+                sessionStorage.setItem(STORE_KEY, JSON.stringify(state));
+                goBack();
+            });
+
+            // Preload sub-skills for preselected categories so chips render instantly.
+            activeCategories().forEach(function (c) { loadSubs(c.id); });
+
+            paintCategories(); paintSubs(); paintExps();
+        })();
+    </script>
+}

@@ -22,22 +22,24 @@
 
 <div class="row g-3 justify-content-center">
     <div class="col-lg-10">
-        <div class="card-soft"><div class="card-body">
-            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-                <button type="button" class="btn btn-outline-primary btn-sm" id="btnLocate"><i class="bi bi-crosshair me-1"></i>Use my current location</button>
-                <span class="text-muted small" id="coordText">
-                    @(hasLoc ? $"Current: {Model.Latitude!.Value.ToString("F5", ci)}, {Model.Longitude!.Value.ToString("F5", ci)}" : "No location saved yet.")
-                </span>
-            </div>
+        <div class="card-soft">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnLocate"><i class="bi bi-crosshair me-1"></i>Use my current location</button>
+                    <span class="text-muted small" id="coordText">
+                        @(hasLoc ? $"Current: {Model.Latitude!.Value.ToString("F5", ci)}, {Model.Longitude!.Value.ToString("F5", ci)}" : "No location saved yet.")
+                    </span>
+                </div>
 
-            <div class="d-flex gap-3 mb-2 small">
-                <span><i class="bi bi-circle-fill" style="color:#1E64D3;"></i> You (drag to adjust)</span>
-                <span><i class="bi bi-circle-fill" style="color:#FF6B35;"></i> Nearby workers (@workers.Count)</span>
-            </div>
+                <div class="d-flex gap-3 mb-2 small">
+                    <span><i class="bi bi-circle-fill" style="color:#1E64D3;"></i> You (drag to adjust)</span>
+                    <span><i class="bi bi-circle-fill" style="color:#FF6B35;"></i> Nearby workers (@workers.Count)</span>
+                </div>
 
-            <div id="clientMap" class="map-box mb-3" style="height:440px;"></div>
-            <button type="button" class="btn btn-primary w-100" id="saveLoc" disabled><i class="bi bi-save me-1"></i>Save Location</button>
-        </div></div>
+                <div id="clientMap" class="map-box mb-3" style="height:440px;"></div>
+                <button type="button" class="btn btn-primary w-100" id="saveLoc" disabled><i class="bi bi-save me-1"></i>Save Location</button>
+            </div>
+        </div>
     </div>
 </div>
 
