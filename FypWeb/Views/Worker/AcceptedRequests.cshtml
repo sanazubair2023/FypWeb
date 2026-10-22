@@ -38,7 +38,15 @@ else
                                 <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
                             }
                             <div>
-                                <div class="fw-bold">@r.OtherPartyName</div>
+                                @if (r.OtherPartyId > 0)
+                                {
+                                    <a asp-controller="Home" asp-action="ClientProfile" asp-route-id="@r.OtherPartyId"
+                                       class="fw-bold text-decoration-underline d-block" style="color:#1E64D3;">@r.OtherPartyName</a>
+                                }
+                                else
+                                {
+                                    <div class="fw-bold">@r.OtherPartyName</div>
+                                }
                                 <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
                                 <div class="text-muted small"><i class="bi bi-clock me-1"></i>@r.Time</div>
                                 <span class="chip chip-blue mt-1">@r.JobType</span>

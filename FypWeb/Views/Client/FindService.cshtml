@@ -19,7 +19,6 @@
         <div class="row g-2 align-items-center">
             <div class="col-md">
                 <form method="get" asp-action="FindService" class="d-flex gap-2" id="searchForm">
-                    @* keep the current filters while searching (RN parity) *@
                     @if (!string.IsNullOrEmpty(gender) && gender != "Both")
                     {
                         <input type="hidden" name="gender" value="@gender" />
@@ -161,7 +160,6 @@ else
 @section Scripts {
     <script>
         (function () {
-            // Removing a single active filter keeps the rest (RN tag behaviour).
             document.querySelectorAll('[data-clear],[data-clearcat],[data-clearsub],[data-clearhabit]').forEach(function (a) {
                 a.addEventListener('click', function (e) {
                     e.preventDefault();

@@ -218,6 +218,7 @@ namespace FypWeb.Controllers
                     r.ReviewDate,
                     EndType = r.Interview!.Status,
                     ReviewerName = r.Interview.Client != null ? r.Interview.Client.Name : "Anonymous",
+                    ReviewerClientId = r.Interview.Client != null ? (int?)r.Interview.Client.ClientId : null,
                     Criteria = r.ReviewCriteriaRatings
                         .OrderBy(c => c.Criteria.SortOrder).ThenBy(c => c.CriteriaId)
                         .Select(c => new CriteriaScoreVM { Name = c.Criteria.CriteriaName, Score = c.Score })
@@ -241,7 +242,8 @@ namespace FypWeb.Controllers
                 WorkedPeriod = r.InterviewId.HasValue && reviewWindows.TryGetValue(r.InterviewId.Value, out var w)
                     ? ReviewHelpers.FormatWorkedPeriod(w.From, w.To) : null,
                 EndType = r.EndType,
-                Criteria = r.Criteria
+                Criteria = r.Criteria,
+                ReviewerClientId = r.ReviewerClientId
             }).ToList();
 
             var catNames = await _context.WorkerCategories
@@ -319,10 +321,20 @@ namespace FypWeb.Controllers
                 }
             }
 
+            // Fix: Check if THIS SPECIFIC CLIENT has an active or terminated/pending contract with this worker,
+            // or if there is any active interview/hiring specifically between this ClientId and WorkerId.
+            // Terminated status with THIS client blocks booking, but other clients can still hire.
             bool hasActive = await _context.Interviews.AnyAsync(i =>
                 i.ClientId == ClientId && i.WorkerId == id &&
-                i.Status != "Rejected" && i.Status != "Completed" &&
-                i.Status != "Terminated" && i.Status != "Resigned");
+                (i.Status == "Pending" || i.Status == "Approved" || i.Status == "Finalized" || i.Status == "ResignationPending"));
+
+            // Check if THIS client previously terminated this worker (if you want to permanently block this client from rehiring this specific worker)
+            bool isTerminatedByThisClient = await _context.Interviews.AnyAsync(i =>
+                i.ClientId == ClientId && i.WorkerId == id && i.Status == "Terminated");
+
+            // Pass this flag to ViewBag so the UI/view can handle it if needed
+            ViewBag.CanHire = !isTerminatedByThisClient;
+            ViewBag.ContractStatus = isTerminatedByThisClient ? "Terminated by You" : "";
 
             string jobType = GeoHelper.ClassifyJobType(client, worker);
             double distanceKm = 0, radius = worker.Radius > 0 ? worker.Radius : 5.0;
@@ -444,6 +456,15 @@ namespace FypWeb.Controllers
             if (client == null) { TempData["Error"] = "Client profile not found."; return RedirectToAction("FindService"); }
             var worker = await _context.Workers.FindAsync(workerId);
             if (worker == null) { TempData["Error"] = "Worker not found."; return RedirectToAction("FindService"); }
+
+            // Prevent the client who terminated this worker from booking them again
+            bool isTerminatedByThisClient = await _context.Interviews.AnyAsync(i =>
+                i.ClientId == ClientId && i.WorkerId == workerId && i.Status == "Terminated");
+            if (isTerminatedByThisClient)
+            {
+                TempData["Error"] = "You cannot hire a worker whose contract you have previously terminated.";
+                return RedirectToAction("WorkerDetail", new { id = workerId });
+            }
 
             // RN posts the full datetime (date picker + clock picker combined);
             // here the two inputs are merged into one InterviewDate value.
@@ -747,6 +768,14 @@ namespace FypWeb.Controllers
                 });
             }
             interview.Status = "Resigned";
+
+            // Resignation ke baad worker dobara available ho jaye (global pool ke liye)
+            var worker = await _context.Workers.FindAsync(interview.WorkerId);
+            if (worker != null)
+            {
+                worker.AvailableStatus = true;
+            }
+
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
@@ -912,6 +941,15 @@ namespace FypWeb.Controllers
                 TerminatedDate = DateOnly.FromDateTime(DateTime.Now),
                 TerminatedReason = reason
             });
+
+            // IMPORTANT: Isay worker.AvailableStatus = false NAHI karna, taake doosre clients ke liye worker available rahay.
+            // Sirf is specific client ke liye interview status "Terminated" rahegi jo ke upar check ho rahi hai.
+            var worker = await _context.Workers.FindAsync(interview.WorkerId);
+            if (worker != null)
+            {
+                worker.AvailableStatus = true; // Baqi clients ke liye worker available hi rahega
+            }
+
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 

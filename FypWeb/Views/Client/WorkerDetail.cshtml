@@ -2,6 +2,8 @@
 @{
     ViewData["Title"] = Model.Name;
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+    bool canHire = ViewBag.CanHire != null && (bool)ViewBag.CanHire;
+    string contractStatus = ViewBag.ContractStatus as string ?? "Terminated";
 }
 
 <a asp-action="FindService" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to search</a>
@@ -77,7 +79,12 @@
                             (@(Model.JobType == "Part-Time" ? "within radius" : "outside radius")).
                         </div>
                     }
-                    @if (Model.HasActiveInterview)
+
+                    @if (!canHire)
+                    {
+                        <button class="btn btn-secondary w-100" disabled><i class="bi bi-slash-circle me-1"></i>Cannot Hire (@contractStatus)</button>
+                    }
+                    else if (Model.HasActiveInterview)
                     {
                         <button class="btn btn-secondary w-100" disabled><i class="bi bi-hourglass-split me-1"></i>Request in progress</button>
                     }
@@ -97,7 +104,6 @@
             <div class="card-body">
                 <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-1 text-brand"></i>Trust &amp; Verification</h6>
 
-                <!-- Police character certificate (Criminal Background Check) -->
                 @{
                     var pStatus = Model.PoliceCertStatus;
                     var pBorder = pStatus == "Verified" ? "border-success" : (pStatus == "Expired" ? "border-warning" : "border-danger");
@@ -143,7 +149,6 @@
                     }
                 </div>
 
-                <!-- Verified Training (RN: legacy certification OR newest course certificate) -->
                 @if (Model.HasVerifiedTraining)
                 {
                     <div class="border border-info rounded p-3" style="background:#F0F9FF;">

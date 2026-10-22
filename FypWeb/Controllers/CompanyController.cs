@@ -46,17 +46,29 @@ namespace FypWeb.Controllers
                 .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId, (wc, c) => new { wc.WorkerId, c.CategoryName })
                 .ToListAsync();
 
-            var result = workerList.Select(w => new CompanyWorkerVM
+            var result = new List<CompanyWorkerVM>();
+
+            foreach (var w in workerList)
             {
-                WorkerId = w.WorkerId,
-                Name = w.Name ?? "N/A",
-                RoleTitle = w.Bio ?? "General Service Professional",
-                Location = w.Address ?? "Rawalpindi",
-                Picture = CleanPic(w.Picture),
-                Salary = w.Salary.HasValue ? "Rs." + w.Salary.Value.ToString("F0") : "Rs.25000",
-                Rating = "4.0",
-                Categories = categoryMap.Where(cm => cm.WorkerId == w.WorkerId).Select(cm => cm.CategoryName).Distinct().ToList()
-            }).ToList();
+                // Fetch actual review ratings from the database for this worker
+                var ratings = await _context.Reviews
+                    .Where(r => r.Interview != null && r.Interview.WorkerId == w.WorkerId)
+                    .Select(r => r.Rating).ToListAsync();
+
+                double avg = ratings.Any() ? Math.Round(ratings.Average(r => (double)(r ?? 0m)), 1) : 0.0;
+
+                result.Add(new CompanyWorkerVM
+                {
+                    WorkerId = w.WorkerId,
+                    Name = w.Name ?? "N/A",
+                    RoleTitle = w.Bio ?? "General Service Professional",
+                    Location = w.Address ?? "Rawalpindi",
+                    Picture = CleanPic(w.Picture),
+                    Salary = w.Salary.HasValue ? "Rs." + w.Salary.Value.ToString("F0") : "Rs.25000",
+                    Rating = avg.ToString("F1"), // Uses real calculated average
+                    Categories = categoryMap.Where(cm => cm.WorkerId == w.WorkerId).Select(cm => cm.CategoryName).Distinct().ToList()
+                });
+            }
 
             if (!string.IsNullOrWhiteSpace(search))
                 result = result.Where(r => r.Name.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -64,7 +76,6 @@ namespace FypWeb.Controllers
             ViewBag.Search = search;
             return View(result);
         }
-
         // ── WORKER DETAIL + ISSUE CERTIFICATE ──────────────────────────────────────
         public async Task<IActionResult> WorkerDetail(int id)
         {

@@ -7,6 +7,7 @@
 @{
     var accent = ViewData["Accent"] as string ?? "#3B82F6";
     var pic = ViewData["Picture"] as string;
+    var nameLink = ViewData["NameLink"] as string;   // RN onNamePress — only set where the name should navigate
     var endKey = (Model.EndType ?? "").ToLowerInvariant();
     string? badgeLabel = endKey == "terminated" ? "Terminated" : endKey == "resigned" ? "Resigned" : null;
     string badgeBg = badgeLabel == "Terminated" ? "#FEE2E2" : "#EDE9FE";
@@ -30,7 +31,14 @@
         }
         <div class="flex-grow-1">
             <div class="d-flex align-items-center flex-wrap gap-1">
-                <span class="fw-bold" style="font-size:.88rem;color:@accent;">@Model.ReviewerName</span>
+                @if (!string.IsNullOrEmpty(nameLink))
+                {
+                    <a href="@nameLink" class="fw-bold text-decoration-underline" style="font-size:.88rem;color:@accent;">@Model.ReviewerName</a>
+                }
+                else
+                {
+                    <span class="fw-bold" style="font-size:.88rem;color:@accent;">@Model.ReviewerName</span>
+                }
                 @if (badgeLabel != null)
                 {
                     <span class="fw-bold" style="font-size:.64rem;background:@badgeBg;color:@badgeFg;padding:2px 8px;border-radius:999px;">@badgeLabel</span>
@@ -67,4 +75,3 @@
 
     <partial name="_CriteriaBreakdown" model="Model.Criteria" />
 </div>
-

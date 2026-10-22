@@ -40,6 +40,11 @@ namespace FypWeb.ViewModels
 
         // Per-criterion breakdown [{ Name, Score }] — empty for legacy reviews.
         public List<CriteriaScoreVM> Criteria { get; set; } = new();
+
+        // Who wrote the review (client id) — RN navigates to ClientProfileScreen
+        // with rev.clientId when the reviewer name is pressed (WorkerDetail only).
+        public int? ReviewerClientId { get; set; }
+        public int? ReviewerId { get; set; }
     }
 
     // One criterion row displayed on a review card (RN CriteriaBreakdown).
@@ -266,6 +271,31 @@ namespace FypWeb.ViewModels
         public string Address { get; set; } = "";
         public string JobType { get; set; } = "";
         public string Status { get; set; } = "";
+    }
+
+    // ── PUBLIC CLIENT PROFILE (RN ClientProfileScreen / api GetClientDetail) ──
+    // Read-only profile of a client, viewable by clients (from worker-detail
+    // review names) and workers (from request cards). Contact details are
+    // deliberately NOT included — the RN screen never shows them.
+    public class ClientProfileVM
+    {
+        public int ClientId { get; set; }
+        public string Name { get; set; } = "";
+        public string? Picture { get; set; }
+        public string? Address { get; set; }
+        public double Rating { get; set; }          // 0 => "New" badge
+        public int ReviewCount { get; set; }
+        public List<ClientProfileReviewVM> Reviews { get; set; } = new();
+    }
+
+    public class ClientProfileReviewVM
+    {
+        public string ReviewerName { get; set; } = "Anonymous Worker";
+        public string? ReviewerPicture { get; set; }
+        public decimal Rating { get; set; }
+        public string? Comment { get; set; }
+        public string Date { get; set; } = "";
+        public string? WorkedPeriod { get; set; }
     }
 
     // ── Company / directory ───────────────────────────────────────────────────

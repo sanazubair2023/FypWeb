@@ -83,6 +83,7 @@ namespace FypWeb.Controllers
                 .Select(r => new
                 {
                     r.InterviewId,
+                    ClientId = r.Interview!.ClientId,
                     Rating = r.Rating ?? 0m,
                     r.Comment,
                     ReviewerName = r.Interview!.Client != null ? r.Interview.Client.Name : "Anonymous",
@@ -104,6 +105,7 @@ namespace FypWeb.Controllers
 
             var reviews = reviewRows.Select(r => new ReviewVM
             {
+                ReviewerId = r.ClientId,
                 Rating = r.Rating,
                 Comment = r.Comment,
                 ReviewerRole = "Client",

@@ -45,7 +45,15 @@ else
                             }
                             <div class="flex-grow-1">
                                 <div class="d-flex justify-content-between">
-                                    <span class="fw-bold">@r.OtherPartyName</span>
+                                    @if (r.OtherPartyId > 0)
+                                    {
+                                        <a asp-controller="Home" asp-action="ClientProfile" asp-route-id="@r.OtherPartyId"
+                                           class="fw-bold text-decoration-underline" style="color:#1E64D3;">@r.OtherPartyName</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="fw-bold">@r.OtherPartyName</span>
+                                    }
                                     <span class="chip @badgeClass">@badge</span>
                                 </div>
                                 <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
