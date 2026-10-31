@@ -9,14 +9,17 @@ namespace Fyp_Backend.Models
     {
         [Key]
         public int Id { get; set; }
-        
+
         [Column("WorkerId")]
         public int WorkerId { get; set; }
-        
+
         [Column("StartTime")]
         public TimeSpan StartTime { get; set; }
-        
+
         [Column("EndTime")]
         public TimeSpan EndTime { get; set; }
+
+        [Column("IsActive")]
+        public bool IsActive { get; set; } = true;
     }
 }

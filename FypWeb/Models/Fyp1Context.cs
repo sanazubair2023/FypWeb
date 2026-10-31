@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Fyp_Backend.Models;
 
@@ -44,6 +45,7 @@ public partial class Fyp1Context : DbContext
     public virtual DbSet<Course> Courses { get; set; }
     public virtual DbSet<CourseEnrollment> CourseEnrollments { get; set; }
     public virtual DbSet<CourseCertificate> CourseCertificates { get; set; }
+    public virtual DbSet<WorkerNotification> WorkerNotifications { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -69,6 +71,7 @@ public partial class Fyp1Context : DbContext
             entity.Property(e => e.WorkerId).HasColumnName("Worker_ID");
             entity.Property(e => e.CategoryId).HasColumnName("Category_ID");
             entity.Property(e => e.SkillsId).HasColumnName("Skills_ID");
+            entity.Property(e => e.IsPrimary).HasDefaultValue(false);
 
             entity.HasOne<Worker>()
                 .WithMany()
@@ -119,10 +122,10 @@ public partial class Fyp1Context : DbContext
             entity.Property(e => e.JobType).HasMaxLength(20).IsUnicode(false);
             entity.Property(e => e.SlotId).HasColumnName("SlotId");
             entity.Property(e => e.IsResidenceProvided).HasColumnName("IsResidenceProvided");
+            entity.Property(e => e.IsExclusive).HasColumnName("IsExclusive").HasDefaultValue(false);
 
-            // Optional link to the picked time slot. SetNull matches the
-            // ON DELETE SET NULL foreign key created by Add_SlotId_To_Interview.sql,
-            // so deleting a slot never breaks an existing interview.
+            // Optional link to the picked time slot. Schedule slots are hidden via
+            // IsActive while a Part-Time hire is active rather than deleted.
             entity.HasOne(d => d.Slot)
                 .WithMany()
                 .HasForeignKey(d => d.SlotId)
@@ -140,12 +143,13 @@ public partial class Fyp1Context : DbContext
         modelBuilder.Entity<Review>(entity =>
         {
             entity.HasKey(e => e.ReviewId).HasName("PK__Reviews__F85DA7EB6071CC75");
+            entity.HasIndex(e => new { e.InterviewId, e.ReviewerRole }).IsUnique().HasFilter("[Interview_ID] IS NOT NULL");
             entity.Property(e => e.ReviewId).HasColumnName("Review_ID");
+            entity.Property(e => e.Comment).HasColumnType("text");
+            entity.Property(e => e.InterviewId).HasColumnName("Interview_ID");
             // Overall is now the average of the per-criterion scores, so it holds
             // fractional values (e.g. 4.33) rather than a hand-picked 1-5 int.
             entity.Property(e => e.Rating).HasColumnType("decimal(3,2)");
-            entity.Property(e => e.Comment).HasColumnType("text");
-            entity.Property(e => e.InterviewId).HasColumnName("Interview_ID");
             entity.Property(e => e.ReviewDate).HasDefaultValueSql("(getdate())").HasColumnType("datetime");
             entity.Property(e => e.ReviewerRole)
                 .HasMaxLength(50)
@@ -167,7 +171,7 @@ public partial class Fyp1Context : DbContext
             entity.Property(e => e.SortOrder).HasColumnName("Sort_Order").HasDefaultValue(0);
             entity.Property(e => e.IsActive).HasColumnName("Is_Active").HasDefaultValue(true);
 
-            entity.HasIndex(e => new { e.CategoryId, e.CriteriaName }).IsUnique();
+            entity.HasIndex(e => new { e.CategoryId, e.CriteriaName }).IsUnique().HasFilter("[Category_ID] IS NOT NULL");
 
             // CategoryId == null => applies to every profession.
             entity.HasOne(d => d.Category).WithMany()
@@ -212,6 +216,7 @@ public partial class Fyp1Context : DbContext
         {
             entity.ToTable("Termination");
             entity.HasKey(e => e.TerminationId);
+            entity.HasIndex(e => e.InterviewId).IsUnique().HasFilter("[Interview_ID] IS NOT NULL");
             entity.Property(e => e.TerminationId).HasColumnName("Termination_ID");
             entity.Property(e => e.InterviewId).HasColumnName("Interview_ID");
             entity.Property(e => e.TerminatedDate).HasColumnName("Terminated_Date");
@@ -250,8 +255,8 @@ public partial class Fyp1Context : DbContext
             entity.Property(e => e.Phone).HasMaxLength(20).IsUnicode(false);
             entity.Property(e => e.Picture).HasMaxLength(255).IsUnicode(false);
             entity.Property(e => e.Salary).HasColumnType("decimal(10, 2)");
-            entity.Property(e => e.Latitude).HasColumnName("Latitude");
-            entity.Property(e => e.Longitude).HasColumnName("Longitude");
+            entity.Property(e => e.Latitude).HasColumnName("Latitude").HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.Longitude).HasColumnName("Longitude").HasColumnType("decimal(9, 6)");
             entity.Property(e => e.Radius).HasColumnName("Radius").HasDefaultValue(5);
         });
 
@@ -260,6 +265,7 @@ public partial class Fyp1Context : DbContext
             entity.ToTable("Hiring");
 
             entity.HasKey(e => e.HiringId);
+            entity.HasIndex(e => e.InterviewId).IsUnique().HasFilter("[interview_id] IS NOT NULL");
 
             entity.Property(e => e.HiringId)
                 .HasColumnName("Hiring_id");
@@ -296,6 +302,8 @@ public partial class Fyp1Context : DbContext
             entity.ToTable("Companies");
             entity.HasKey(e => e.CompanyID);
 
+            entity.HasIndex(e => e.Email).IsUnique();
+            entity.HasIndex(e => e.LicenseNumber).IsUnique();
             entity.Property(e => e.CompanyName).HasMaxLength(150);
             entity.Property(e => e.Email).HasMaxLength(100);
             entity.Property(e => e.Password).HasMaxLength(255);
@@ -313,6 +321,8 @@ public partial class Fyp1Context : DbContext
             entity.ToTable("PoliceOfficers");
             entity.HasKey(e => e.PoliceID);
 
+            entity.HasIndex(e => e.BadgeID).IsUnique();
+            entity.HasIndex(e => e.Email).IsUnique();
             entity.Property(e => e.StationName).HasMaxLength(150);
             entity.Property(e => e.BadgeID).HasMaxLength(50);
             entity.Property(e => e.Email).HasMaxLength(100);
@@ -347,6 +357,8 @@ public partial class Fyp1Context : DbContext
         {
             entity.ToTable("PoliceRecords");
             entity.HasKey(e => e.RecordID);
+            entity.HasIndex(e => e.WorkerID).IsUnique();
+            entity.HasIndex(e => e.CertificateNo).IsUnique().HasFilter("[CertificateNo] IS NOT NULL");
 
             entity.Property(e => e.WorkerID).HasColumnName("WorkerID");
             entity.Property(e => e.PoliceID).HasColumnName("PoliceID");
@@ -354,12 +366,12 @@ public partial class Fyp1Context : DbContext
             entity.Property(e => e.CharacterStatus).HasMaxLength(50);
             entity.Property(e => e.Remarks).HasColumnType("nvarchar(max)");
             entity.Property(e => e.VerifiedCnic).HasMaxLength(20);
-            entity.Property(e => e.CnicVerified);
+            entity.Property(e => e.CnicVerified).HasDefaultValue(false);
             entity.Property(e => e.IssuingStation).HasMaxLength(150);
             entity.Property(e => e.IssuingBadge).HasMaxLength(50);
             entity.Property(e => e.IssuedDate).HasColumnType("datetime").HasDefaultValueSql("(getdate())");
             entity.Property(e => e.ExpiryDate).HasColumnType("datetime");
-            entity.Property(e => e.IsRevoked);
+            entity.Property(e => e.IsRevoked).HasDefaultValue(false);
 
             entity.HasOne(d => d.PoliceOfficer)
                 .WithMany()
@@ -378,6 +390,7 @@ public partial class Fyp1Context : DbContext
             entity.Property(e => e.WorkerId).HasColumnName("WorkerId");
             entity.Property(e => e.StartTime).HasColumnType("time");
             entity.Property(e => e.EndTime).HasColumnType("time");
+            entity.Property(e => e.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
 
             entity.HasOne<Worker>()
                 .WithMany()
@@ -392,6 +405,9 @@ public partial class Fyp1Context : DbContext
             entity.HasKey(e => e.HabitId);
 
             entity.Property(e => e.Name).HasMaxLength(60).IsRequired();
+            entity.Property(e => e.IsWorkerSelectable).HasDefaultValue(true);
+            entity.Property(e => e.IsClientFilterable).HasDefaultValue(false);
+            entity.Property(e => e.ExclusiveGroup).HasMaxLength(40);
             entity.HasIndex(e => e.Name).IsUnique();
         });
 
@@ -446,6 +462,49 @@ public partial class Fyp1Context : DbContext
             entity.HasOne(e => e.Worker).WithMany().HasForeignKey(e => e.WorkerID).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.Company).WithMany().HasForeignKey(e => e.CompanyID).OnDelete(DeleteBehavior.Restrict);
         });
+
+        modelBuilder.Entity<WorkerNotification>(entity =>
+        {
+            entity.ToTable("WorkerNotification", "dbo");
+            entity.HasKey(n => new { n.WorkerId, n.NotificationKey })
+                .HasName("PK_WorkerNotification");
+            entity.Property(n => n.NotificationKey).HasMaxLength(96).IsUnicode(false);
+            entity.Property(n => n.Type).HasMaxLength(20).IsUnicode(false);
+            entity.Property(n => n.Title).HasMaxLength(160);
+            entity.Property(n => n.Message).HasColumnType("nvarchar(max)");
+            // SQL datetime2 does not retain DateTime.Kind. Restore UTC when reading
+            // so mobile clients receive a Z suffix instead of assuming local time.
+            var utc = new ValueConverter<DateTime, DateTime>(value => value,
+                value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
+            entity.Property(n => n.CreatedAtUtc).HasColumnType("datetime2(7)").HasConversion(utc);
+            entity.Property(n => n.ReadAtUtc).HasColumnType("datetime2(7)").HasConversion(utc);
+            entity.HasIndex(n => new { n.WorkerId, n.CreatedAtUtc, n.NotificationKey })
+                .IsDescending(false, true, true).HasDatabaseName("IX_WorkerNotification_Feed");
+            entity.HasIndex(n => new { n.WorkerId, n.ReadAtUtc })
+                .HasDatabaseName("IX_WorkerNotification_Unread");
+            entity.HasOne<Worker>().WithMany().HasForeignKey(n => n.WorkerId)
+                .OnDelete(DeleteBehavior.Cascade).HasConstraintName("FK_WorkerNotification_Worker");
+        });
+
+
+        var utc = new ValueConverter<DateTime, DateTime>(v => v,
+            v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+        modelBuilder.Entity<Resignation>(entity =>
+        {
+            entity.Property(r => r.NoticeEndsAtUtc).HasColumnType("datetime2(7)").HasConversion(utc);
+            entity.Property(r => r.AcceptedAtUtc).HasColumnType("datetime2(7)").HasConversion(utc);
+            entity.Property(r => r.AcceptanceMode).HasMaxLength(16).IsUnicode(false);
+            entity.HasIndex(r => new { r.NoticeEndsAtUtc, r.ResignationId })
+                .IncludeProperties(r => new { r.AcceptedAtUtc, r.InterviewId })
+                .HasFilter("[NoticeEndsAtUtc] IS NOT NULL AND [AcceptedAtUtc] IS NULL")
+                .HasDatabaseName("IX_Resignation_DueNotice");
+            // Legacy duplicates are retained. Only newly submitted workflow rows
+            // participate in this guard; one resignation per contract as before.
+            entity.HasIndex(r => r.InterviewId).IsUnique()
+                .HasFilter("[NoticeEndsAtUtc] IS NOT NULL AND [Interview_ID] IS NOT NULL")
+                .HasDatabaseName("UX_Resignation_NewWorkflowContract");
+        });
+
 
         OnModelCreatingPartial(modelBuilder);
     }

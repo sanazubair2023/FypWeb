@@ -10,27 +10,27 @@ namespace Fyp_Backend.Models
 
         [Required]
         [StringLength(150)]
-        public string CompanyName { get; set; }
+        public string CompanyName { get; set; } = string.Empty;
 
         [Required]
         [StringLength(100)]
-        public string Email { get; set; }
+        public string Email { get; set; } = string.Empty;
 
         [Required]
         [StringLength(255)]
-        public string Password { get; set; }
+        public string Password { get; set; } = string.Empty;
 
         [Required]
         [StringLength(20)]
-        public string PhoneNo { get; set; }
+        public string PhoneNo { get; set; } = string.Empty;
 
         [Required]
         [StringLength(50)]
-        public string LicenseNumber { get; set; }
+        public string LicenseNumber { get; set; } = string.Empty;
 
         [Required]
         [StringLength(255)]
-        public string CompanyAddress { get; set; }
+        public string CompanyAddress { get; set; } = string.Empty;
 
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public string? CompanyPicture { get; set; } = "company_default.jpg";

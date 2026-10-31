@@ -3,9 +3,11 @@
     ViewData["Title"] = "Dashboard";
     int hiredCount = ViewBag.HiredCount ?? 0;
     int pendingCount = ViewBag.PendingCount ?? 0;
+    int pendingJobRequests = ViewBag.PendingJobRequestsCount ?? 0;
+    int pendingResignations = ViewBag.PendingResignationsCount ?? 0;
 
     var activeList = Model.Where(w => w.Status == "On Work" || w.Status == "Pending Resignation").ToList();
-    var pastList = Model.Where(w => w.Status == "Resigned" || w.Status == "Terminated").ToList();
+    var pastList = Model.Where(w => w.Status == "Resigned" || w.Status == "Terminated" || w.Status == "Completed").ToList();
 
     var hour = System.DateTime.Now.Hour;
     var greeting = hour < 12 ? "GOOD MORNING" : hour < 17 ? "GOOD AFTERNOON" : "GOOD EVENING";
@@ -48,18 +50,24 @@
     </div>
     <div class="col-6 col-lg-3">
         <a asp-action="WorkerDecisions" class="qa-card" style="--qa-bg:#E6FFFA;--qa-fg:#2C7A7B;">
-            <div class="qa-icon"><i class="bi bi-briefcase"></i></div>
-            <div class="qa-title">Job Requests</div>
-            <div class="qa-sub">Worker decisions</div>
-        </a>
+            <div class="qa-icon"><i class="bi bi-briefcase"></i>@if (pendingJobRequests > 0) {
+                <span class="qa-dot"></span>
+            }
+        </div>
+        <div class="qa-title">Job Requests</div>
+        <div class="qa-sub">@(pendingJobRequests > 0 ? $"{pendingJobRequests} need action" : "Worker decisions")</div>
+    </a>
+</div>
+<div class="col-6 col-lg-3">
+    <a asp-action="Resignations" class="qa-card" style="--qa-bg:#FFF5F5;--qa-fg:#C53030;">
+        <div class="qa-icon"><i class="bi bi-box-arrow-right"></i>@if (pendingResignations > 0) {
+            <span class="qa-dot"></span>
+        }
     </div>
-    <div class="col-6 col-lg-3">
-        <a asp-action="Resignations" class="qa-card" style="--qa-bg:#FFF5F5;--qa-fg:#C53030;">
-            <div class="qa-icon"><i class="bi bi-box-arrow-right"></i></div>
-            <div class="qa-title">Resignations</div>
-            <div class="qa-sub">Review & confirm</div>
-        </a>
-    </div>
+    <div class="qa-title">Resignations</div>
+    <div class="qa-sub">@(pendingResignations > 0 ? $"{pendingResignations} need action" : "Review & confirm")</div>
+</a>
+</div>
 </div>
 
 @* ---- Segment tabs (Overview | Active | Past) ---- *@

@@ -54,24 +54,28 @@
 <h6 class="fw-bold mb-3">Overview</h6>
 <div class="row g-3 mb-3">
     <div class="col-md-6">
-        <div class="card-soft h-100"><div class="card-body">
-            <div style="width:39px;height:39px;border-radius:12px;background:#EAF3FF;color:#1565C0;display:grid;place-items:center;">
-                <i class="bi bi-book"></i>
+        <div class="card-soft h-100">
+            <div class="card-body">
+                <div style="width:39px;height:39px;border-radius:12px;background:#EAF3FF;color:#1565C0;display:grid;place-items:center;">
+                    <i class="bi bi-book"></i>
+                </div>
+                <div class="fw-bold" style="font-size:1.7rem;margin-top:.7rem;">@Model.TotalCourses</div>
+                <div class="fw-bold" style="font-size:.85rem;">Total Courses</div>
+                <div class="text-muted" style="font-size:.75rem;">@Model.ActiveCourses active</div>
             </div>
-            <div class="fw-bold" style="font-size:1.7rem;margin-top:.7rem;">@Model.TotalCourses</div>
-            <div class="fw-bold" style="font-size:.85rem;">Total Courses</div>
-            <div class="text-muted" style="font-size:.75rem;">@Model.ActiveCourses active</div>
-        </div></div>
+        </div>
     </div>
     <div class="col-md-6">
-        <div class="card-soft h-100"><div class="card-body">
-            <div style="width:39px;height:39px;border-radius:12px;background:#E7F7F0;color:#16865C;display:grid;place-items:center;">
-                <i class="bi bi-people"></i>
+        <div class="card-soft h-100">
+            <div class="card-body">
+                <div style="width:39px;height:39px;border-radius:12px;background:#E7F7F0;color:#16865C;display:grid;place-items:center;">
+                    <i class="bi bi-people"></i>
+                </div>
+                <div class="fw-bold" style="font-size:1.7rem;margin-top:.7rem;">@Model.UniqueEnrolledWorkers</div>
+                <div class="fw-bold" style="font-size:.85rem;">Enrolled Workers</div>
+                <div class="text-muted" style="font-size:.75rem;">@Model.TotalEnrollments enrollments</div>
             </div>
-            <div class="fw-bold" style="font-size:1.7rem;margin-top:.7rem;">@Model.UniqueEnrolledWorkers</div>
-            <div class="fw-bold" style="font-size:.85rem;">Enrolled Workers</div>
-            <div class="text-muted" style="font-size:.75rem;">@Model.TotalEnrollments enrollments</div>
-        </div></div>
+        </div>
     </div>
 </div>
 

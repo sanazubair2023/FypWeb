@@ -10,34 +10,45 @@
             <h4 class="mb-0 fw-bold">Digital Certificate</h4>
         </div>
 
-        <div class="card-soft"><div class="card-body text-center py-5 px-4">
-            <div class="cert-seal mb-3"><i class="bi bi-patch-check-fill"></i></div>
-            <div class="text-muted small fw-bold" style="letter-spacing:.15em;">CERTIFICATE OF COMPLETION</div>
-            <p class="text-muted mt-3 mb-1">This certificate is proudly presented to</p>
-            <h3 class="fw-bold">@Model.WorkerName</h3>
-            <p class="text-muted mb-1 mt-2">for successfully completing</p>
-            <h4 class="fw-bold text-brand">@Model.CourseName</h4>
-            <div class="text-muted small mt-2">Issued by <strong>@Model.CompanyName</strong></div>
+        <div class="card-soft">
+            <div class="card-body text-center py-5 px-4">
+                <div class="cert-seal mb-3"><i class="bi bi-patch-check-fill"></i></div>
+                <div class="text-muted small fw-bold" style="letter-spacing:.15em;">CERTIFICATE OF COMPLETION</div>
+                <p class="text-muted mt-3 mb-1">This certificate is proudly presented to</p>
+                <h3 class="fw-bold">@Model.WorkerName</h3>
+                <p class="text-muted mb-1 mt-2">for successfully completing</p>
+                <h4 class="fw-bold text-brand">@Model.CourseName</h4>
+                <div class="text-muted small mt-2">Issued by <strong>@Model.CompanyName</strong></div>
 
-            <hr class="my-4" style="width:60%; margin-left:auto; margin-right:auto;" />
-            <div class="font-monospace fw-bold">@Model.CertificateCode</div>
-            <div class="text-muted small mt-1">Issued @Model.IssuedDate</div>
+                <hr class="my-4" style="width:60%; margin-left:auto; margin-right:auto;" />
+                <div class="font-monospace fw-bold">@Model.CertificateCode</div>
+                <div class="text-muted small mt-1">Issued @Model.IssuedDate</div>
 
-            <div class="d-inline-flex align-items-center gap-2 mt-4 px-3 py-2 rounded-3"
-                 style="background:@(Model.IsValid ? "#E7F7F0" : "#FDECEC");">
-                <i class="bi @(Model.IsValid ? "bi-patch-check-fill" : "bi-exclamation-circle-fill")"
-                   style="color:@(Model.IsValid ? "#16865C" : "#C62828");"></i>
-                <span class="fw-bold" style="color:@(Model.IsValid ? "#16865C" : "#C62828");">
-                    @(Model.IsValid ? "Verified certificate" : "Certificate revoked")
-                </span>
+                <div class="d-inline-flex align-items-center gap-2 mt-4 px-3 py-2 rounded-3"
+                     style="background:@(Model.IsValid ? "#E7F7F0" : "#FDECEC");">
+                    <i class="bi @(Model.IsValid ? "bi-patch-check-fill" : "bi-exclamation-circle-fill")"
+                       style="color:@(Model.IsValid ? "#16865C" : "#C62828");"></i>
+                    <span class="fw-bold" style="color:@(Model.IsValid ? "#16865C" : "#C62828");">
+                        @(Model.IsValid ? "Verified certificate" : "Certificate revoked")
+                    </span>
+                </div>
             </div>
-        </div></div>
+        </div>
     </div>
 </div>
 
 @section Styles {
-<style>
-    .cert-seal { width:74px; height:74px; margin:0 auto; border-radius:50%; background:#EAF3FF;
-        display:grid; place-items:center; font-size:2rem; color:#1565C0; }
-</style>
+    <style>
+        .cert-seal {
+            width: 74px;
+            height: 74px;
+            margin: 0 auto;
+            border-radius: 50%;
+            background: #EAF3FF;
+            display: grid;
+            place-items: center;
+            font-size: 2rem;
+            color: #1565C0;
+        }
+    </style>
 }

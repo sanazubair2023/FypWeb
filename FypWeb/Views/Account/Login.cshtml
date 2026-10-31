@@ -8,7 +8,7 @@
     <h2 class="mb-1">Welcome back 👋</h2>
     <p class="text-muted mb-4">Sign in to your account to continue.</p>
 
-    <form asp-action="Login" method="post" id="loginForm">
+    <form asp-action="Login" asp-route-returnUrl="@ViewBag.ReturnUrl" method="post" id="loginForm">
         @Html.AntiForgeryToken()
 
         <label class="form-label fw-semibold">I am a</label>
@@ -36,6 +36,11 @@
                 <input asp-for="Password" type="password" class="form-control" id="pwdInput" placeholder="••••••••" autocomplete="current-password" required />
                 <button class="btn btn-outline-secondary" type="button" id="togglePwd"><i class="bi bi-eye"></i></button>
             </div>
+        </div>
+
+        <div class="form-check mb-4">
+            <input asp-for="RememberMe" class="form-check-input" />
+            <label asp-for="RememberMe" class="form-check-label">Keep me signed in on this device</label>
         </div>
 
         <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">

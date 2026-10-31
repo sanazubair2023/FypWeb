@@ -1,4 +1,4 @@
-namespace FypWeb.ViewModels
+﻿namespace FypWeb.ViewModels
 {
     // ── Worker discovery / cards ──────────────────────────────────────────────
     public class WorkerCardVM
@@ -102,6 +102,10 @@ namespace FypWeb.ViewModels
         public List<SlotVM> Slots { get; set; } = new();
         public List<ReviewVM> Reviews { get; set; } = new();
         public bool HasActiveInterview { get; set; }
+        public bool CanViewContact { get; set; }
+        public bool CanHire { get; set; }
+        public bool IsExclusiveFullTime { get; set; }
+        public string ContractStatus { get; set; } = "";
 
         // ── Trust & Verification (ported from RN WorkerDetailScreen) ──
         // Police character certificate
@@ -181,6 +185,9 @@ namespace FypWeb.ViewModels
         public string HiringDecision { get; set; } = "";
         public string? SlotStart { get; set; }
         public string? SlotEnd { get; set; }
+        public bool IsExclusive { get; set; }
+        public int? ResignationId { get; set; }
+        public string? HiringDate { get; set; }
     }
 
     // ── Resignations ──────────────────────────────────────────────────────────
@@ -197,6 +204,9 @@ namespace FypWeb.ViewModels
 
         // Detail view (RN ResignationScreen): has the client already confirmed?
         public bool IsConfirmed { get; set; }
+        public string? AcceptanceMode { get; set; }
+        public string? AcceptedAt { get; set; }
+        public bool CanClientReview => IsConfirmed && ClientReview == null;
 
         // The worker's own closing review (written when resigning).
         public ReviewVM? WorkerReview { get; set; }
@@ -271,6 +281,7 @@ namespace FypWeb.ViewModels
         public string Address { get; set; } = "";
         public string JobType { get; set; } = "";
         public string Status { get; set; } = "";
+        public bool IsExclusive { get; set; }
     }
 
     // ── PUBLIC CLIENT PROFILE (RN ClientProfileScreen / api GetClientDetail) ──

@@ -61,11 +61,11 @@
             </div>
             <div class="col-md-4">
                 <label class="form-label small fw-semibold">Workplace / Company</label>
-                <input type="text" class="form-control" id="expWorkAt" placeholder="Where did you work? (e.g. PC Hotel)" />
+                <input type="text" class="form-control" id="expWorkAt" maxlength="150" placeholder="Where did you work? (e.g. PC Hotel)" />
             </div>
             <div class="col-md-4">
                 <label class="form-label small fw-semibold">Role / Description</label>
-                <input type="text" class="form-control" id="expDetail" placeholder="What did you do?" />
+                <input type="text" class="form-control" id="expDetail" maxlength="4000" placeholder="What did you do?" />
             </div>
         </div>
         <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="btnAddExp"><i class="bi bi-plus-lg me-1"></i>Add experience</button>
@@ -196,7 +196,8 @@
                     box.className = 'subcat-box';
                     var head = document.createElement('div');
                     head.className = 'small fw-bold mb-2';
-                    head.innerHTML = '<i class="bi bi-collection me-1 text-brand"></i>' + cat.name + ' sub-skills';
+                    head.innerHTML = '<i class="bi bi-collection me-1 text-brand"></i>';
+                    head.appendChild(document.createTextNode(cat.name + ' sub-skills'));
                     box.appendChild(head);
                     var chipRow = document.createElement('div');
                     chipRow.className = 'd-flex flex-wrap gap-2';
@@ -216,7 +217,8 @@
                     var b = document.createElement('button');
                     b.type = 'button';
                     b.className = 'skill-chip' + (isPicked(catId, s.id) ? ' on' : '');
-                    b.innerHTML = (isPicked(catId, s.id) ? '<i class="bi bi-check-circle me-1"></i>' : '<i class="bi bi-plus-circle me-1"></i>') + s.name;
+                    b.innerHTML = isPicked(catId, s.id) ? '<i class="bi bi-check-circle me-1"></i>' : '<i class="bi bi-plus-circle me-1"></i>';
+                    b.appendChild(document.createTextNode(s.name));
                     b.addEventListener('click', function () { toggleSkill(catId, s.id, s.name); });
                     row.appendChild(b);
                 });
@@ -236,7 +238,7 @@
                     state.skills = state.skills.filter(function (s) { return !(s.CategoryId === catId && s.SkillsId === skillId); });
                 } else {
                     var catBtn = primaryRow.querySelector('[data-id="' + catId + '"]');
-                    state.skills.push({ CategoryId: catId, SkillsId: skillId, CategoryName: catBtn ? catBtn.getAttribute('data-name') : '', SkillName: skillName(catId, skillId) });
+                    state.skills.push({ CategoryId: catId, SkillsId: skillId, CategoryName: catBtn ? catBtn.getAttribute('data-name') : '', SkillName: skillName(catId, skillId), IsPrimary: catId === state.primary });
                 }
                 wrap.querySelectorAll('[data-cat]').forEach(function (row) { paintChips(row, +row.getAttribute('data-cat')); });
             }
@@ -247,6 +249,10 @@
                 var id = +b.getAttribute('data-id');
                 state.primary = (state.primary === id) ? null : id;
                 state.secondary = state.secondary.filter(function (s) { return s !== state.primary; });
+                state.skills = state.skills.filter(function (skill) {
+                    return skill.CategoryId === state.primary || state.secondary.indexOf(skill.CategoryId) >= 0;
+                });
+                state.skills.forEach(function (skill) { skill.IsPrimary = skill.CategoryId === state.primary; });
                 paintCategories(); paintSubs();
             });
             secondaryRow.addEventListener('click', function (e) {
@@ -255,6 +261,9 @@
                 var id = +b.getAttribute('data-id');
                 var i = state.secondary.indexOf(id);
                 if (i >= 0) state.secondary.splice(i, 1); else state.secondary.push(id);
+                state.skills = state.skills.filter(function (skill) {
+                    return skill.CategoryId === state.primary || state.secondary.indexOf(skill.CategoryId) >= 0;
+                });
                 paintCategories(); paintSubs();
             });
 
@@ -281,12 +290,17 @@
                 state.experiences.forEach(function (exp, i) {
                     var div = document.createElement('div');
                     div.className = 'card-soft mb-2';
-                    div.innerHTML = '<div class="card-body py-2 d-flex justify-content-between align-items-center">' +
-                        '<div><div class="fw-semibold">' + (exp.WorkAt || '') + '</div>' +
-                        '<small class="text-muted">' + (exp.Duration || '') + '</small>' +
-                        (exp.ExpDetail ? '<div class="small text-muted mt-1">' + exp.ExpDetail + '</div>' : '') +
-                        '</div><button type="button" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-lg"></i></button></div>';
-                    div.querySelector('button').addEventListener('click', function () { state.experiences.splice(i, 1); paintExps(); });
+                    var body = document.createElement('div');
+                    body.className = 'card-body py-2 d-flex justify-content-between align-items-center';
+                    var content = document.createElement('div');
+                    var work = document.createElement('div'); work.className = 'fw-semibold'; work.textContent = exp.WorkAt || '';
+                    var duration = document.createElement('small'); duration.className = 'text-muted'; duration.textContent = exp.Duration || '';
+                    content.appendChild(work); content.appendChild(duration);
+                    if (exp.ExpDetail) { var detail = document.createElement('div'); detail.className = 'small text-muted mt-1'; detail.textContent = exp.ExpDetail; content.appendChild(detail); }
+                    var remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-sm btn-outline-danger';
+                    remove.innerHTML = '<i class="bi bi-x-lg"></i>';
+                    remove.addEventListener('click', function () { state.experiences.splice(i, 1); paintExps(); });
+                    body.appendChild(content); body.appendChild(remove); div.appendChild(body);
                     box.appendChild(div);
                 });
             }
@@ -317,7 +331,7 @@
                 if (!state.primary) { alert('Please select a Primary Category.'); return; }
                 if (!state.skills.length) { alert('Please select at least one sub-skill chip to proceed.'); return; }
                 // Remember names for display on the calling form.
-                state.skills.forEach(function (s) { if (!s.SkillName) s.SkillName = skillName(s.CategoryId, s.SkillsId); });
+                state.skills.forEach(function (s) { if (!s.SkillName) s.SkillName = skillName(s.CategoryId, s.SkillsId); s.IsPrimary = s.CategoryId === state.primary; });
                 var primaryBtn = primaryRow.querySelector('[data-id="' + state.primary + '"]');
                 state.primaryName = primaryBtn ? primaryBtn.getAttribute('data-name') : '';
                 sessionStorage.setItem(STORE_KEY, JSON.stringify(state));

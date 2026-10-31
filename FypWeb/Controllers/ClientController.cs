@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Fyp_Backend.Models;
 using FypWeb.Helpers;
+using FypWeb.Services;
 using FypWeb.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
@@ -15,10 +16,20 @@ namespace FypWeb.Controllers
     {
         private readonly Fyp1Context _context;
         private readonly ImageService _images;
-        public ClientController(Fyp1Context context, ImageService images)
+        private readonly PasswordService _passwords;
+        private readonly ContractRules _rules;
+        private readonly ResignationWorkflowService _workflow;
+        private readonly ILogger<ClientController> _logger;
+
+        public ClientController(Fyp1Context context, ImageService images, PasswordService passwords,
+            ContractRules rules, ResignationWorkflowService workflow, ILogger<ClientController> logger)
         {
             _context = context;
             _images = images;
+            _passwords = passwords;
+            _rules = rules;
+            _workflow = workflow;
+            _logger = logger;
         }
 
         private int ClientId => User.GetId();
@@ -27,9 +38,17 @@ namespace FypWeb.Controllers
         public async Task<IActionResult> Dashboard()
         {
             int clientId = ClientId;
+            await _workflow.ProcessDueAsync(clientId: clientId);
 
-            ViewBag.PendingCount = await _context.Interviews
-                .CountAsync(i => i.ClientId == clientId && i.Status == "Pending");
+            ViewBag.PendingCount = await _context.Interviews.CountAsync(i => i.ClientId == clientId && i.Status == "Pending");
+            ViewBag.PendingJobRequestsCount = await _context.Hiring.CountAsync(h => h.Interview != null &&
+                h.Interview.ClientId == clientId && h.HiringDecision == "Pending" &&
+                (h.WorkerDecision == "Accepted" || h.WorkerDecision == "Rejected") && h.Interview.Status != "Terminated" &&
+                h.Interview.Status != "Resigned" && h.Interview.Status != "Completed");
+            ViewBag.PendingResignationsCount = await _context.Resignations.CountAsync(r => r.Interview != null &&
+                r.Interview.ClientId == clientId && r.Interview.Status != "Terminated" &&
+                (r.Interview.Status != "Resigned" || r.AcceptanceMode == "Automatic") &&
+                !_context.Reviews.Any(review => review.InterviewId == r.InterviewId && review.ReviewerRole == "Client"));
 
             var hired = await _context.Hiring
                 .Include(h => h.Interview).ThenInclude(i => i!.Worker)
@@ -46,7 +65,12 @@ namespace FypWeb.Controllers
                     jobType = h.Interview.JobType ?? "Full-Time",
                     status = h.Interview.Status,
                     slotStart = h.Interview.Slot != null ? (TimeSpan?)h.Interview.Slot.StartTime : null,
-                    slotEnd = h.Interview.Slot != null ? (TimeSpan?)h.Interview.Slot.EndTime : null
+                    slotEnd = h.Interview.Slot != null ? (TimeSpan?)h.Interview.Slot.EndTime : null,
+                    isExclusive = h.Interview.IsExclusive && h.Interview.JobType == "Full-Time",
+                    resignationId = _context.Resignations.Where(r => r.InterviewId == h.InterviewId)
+                        .OrderByDescending(r => r.SubmittedDate).ThenByDescending(r => r.ResignationId)
+                        .Select(r => (int?)r.ResignationId).FirstOrDefault(),
+                    hiringDate = h.HiringDate
                 })
                 .ToListAsync();
 
@@ -65,11 +89,15 @@ namespace FypWeb.Controllers
                     "ResignationPending" => "Pending Resignation",
                     "Resigned" => "Resigned",
                     "Terminated" => "Terminated",
+                    "Completed" => "Completed",
                     _ => "On Work"
-                }
+                },
+                IsExclusive = h.isExclusive,
+                ResignationId = h.resignationId,
+                HiringDate = h.hiringDate?.ToString("dd MMM yyyy")
             }).ToList();
 
-            ViewBag.HiredCount = cards.Count(c => c.Status == "On Work");
+            ViewBag.HiredCount = cards.Count(c => c.Status is "On Work" or "Pending Resignation");
             return View(cards);
         }
 
@@ -78,91 +106,95 @@ namespace FypWeb.Controllers
             string? search, List<string>? categories, string? gender, string? city,
             List<string>? subSkills, List<int>? habitIds)
         {
-            IQueryable<Worker> query = _context.Workers;
+            var currentCity = await GetCurrentCityAsync();
+            var selectedCity = !string.IsNullOrWhiteSpace(city) ? city.Trim() : currentCity;
+            var cityFilter = !string.IsNullOrWhiteSpace(selectedCity) &&
+                !selectedCity.Equals("All", StringComparison.OrdinalIgnoreCase) ? selectedCity : null;
 
+            IQueryable<Worker> query = _rules.DiscoverableByClient(_context.Workers.AsNoTracking(), ClientId);
             if (categories != null && categories.Any() && !categories.Contains("All"))
             {
                 var normalized = categories.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).ToList();
                 var categoryIds = normalized.Where(c => int.TryParse(c, out _)).Select(int.Parse).ToList();
                 var categoryNames = normalized.Where(c => !int.TryParse(c, out _)).ToList();
-                query = query.Where(w => _context.WorkerCategories
-                    .Any(wc => wc.WorkerId == w.WorkerId && _context.Categories
-                        .Any(c => c.CategoryId == wc.CategoryId &&
-                            (categoryIds.Contains(c.CategoryId) || categoryNames.Contains(c.CategoryName)))));
+                query = query.Where(w => _context.WorkerCategories.Any(wc => wc.WorkerId == w.WorkerId &&
+                    _context.Categories.Any(c => c.CategoryId == wc.CategoryId &&
+                        (categoryIds.Contains(c.CategoryId) || categoryNames.Contains(c.CategoryName)))));
             }
+            if (!string.IsNullOrEmpty(gender) && gender != "Both") query = query.Where(w => w.Gender == gender);
+            if (cityFilter != null) query = query.Where(w => w.Address != null && w.Address.Contains(cityFilter));
+            if (!string.IsNullOrWhiteSpace(search)) query = query.Where(w => w.Name != null && w.Name.Contains(search));
+            if (subSkills != null) foreach (var skillName in subSkills.Where(x => !string.IsNullOrWhiteSpace(x)))
+                query = query.Where(w => _context.WorkerCategories.Any(wc => wc.WorkerId == w.WorkerId &&
+                    _context.Skills.Any(s => s.SkillsId == wc.SkillsId && s.SkillName == skillName)));
+            if (habitIds != null) foreach (var wanted in habitIds.Where(id => id > 0).Distinct())
+                query = query.Where(w => _context.WorkerHabits.Any(wh => wh.WorkerId == w.WorkerId && wh.HabitId == wanted));
 
-            if (!string.IsNullOrEmpty(gender) && gender != "Both")
-                query = query.Where(w => w.Gender == gender);
+            var workers = await query.OrderBy(w => w.Name).ToListAsync();
+            var ids = workers.Select(w => w.WorkerId).ToList();
+            var categoryRows = await _context.WorkerCategories.Where(wc => ids.Contains(wc.WorkerId))
+                .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId,
+                    (wc, c) => new { wc.WorkerId, wc.IsPrimary, c.CategoryName })
+                .OrderByDescending(x => x.IsPrimary).ThenBy(x => x.CategoryName).ToListAsync();
+            var ratingRows = await _context.Reviews.Where(r => r.ReviewerRole == "Client" && r.Interview != null &&
+                r.Interview.WorkerId != null && ids.Contains(r.Interview.WorkerId.Value))
+                .Select(r => new { WorkerId = r.Interview!.WorkerId!.Value, Rating = r.Rating ?? 0m }).ToListAsync();
+            var verifiedIds = (await _context.PoliceRecords.Where(pr => ids.Contains(pr.WorkerID) && !pr.IsRevoked && pr.ExpiryDate > DateTime.Now)
+                .Select(pr => pr.WorkerID).Distinct().ToListAsync()).ToHashSet();
+            var certifiedIds = (await _context.WorkerCertifications.Where(c => ids.Contains(c.WorkerID)).Select(c => c.WorkerID)
+                .Union(_context.CourseCertificates.Where(c => ids.Contains(c.WorkerID) && !c.IsRevoked).Select(c => c.WorkerID))
+                .ToListAsync()).ToHashSet();
+            var exclusiveIds = (await _context.Hiring.Where(h => h.HiringDecision == "Accepted" && h.Interview != null &&
+                h.Interview.WorkerId != null && ids.Contains(h.Interview.WorkerId.Value) && h.Interview.JobType == "Full-Time" &&
+                h.Interview.IsExclusive && h.Interview.Status != "Resigned" && h.Interview.Status != "Terminated" &&
+                h.Interview.Status != "Completed" && !_context.Resignations.Any(r => r.InterviewId == h.InterviewId))
+                .Select(h => h.Interview!.WorkerId!.Value).Distinct().ToListAsync()).ToHashSet();
 
-            if (!string.IsNullOrEmpty(city))
-                query = query.Where(w => w.Address != null && w.Address.Contains(city));
-
-            if (!string.IsNullOrEmpty(search))
-                query = query.Where(w => w.Name != null && w.Name.Contains(search));
-
-            if (subSkills != null && subSkills.Any())
-                foreach (var skillName in subSkills)
-                    query = query.Where(w => _context.WorkerCategories
-                        .Any(wc => wc.WorkerId == w.WorkerId && _context.Skills.Any(s => s.SkillsId == wc.SkillsId && s.SkillName == skillName)));
-
-            if (habitIds != null && habitIds.Any())
-                foreach (var hid in habitIds.Where(id => id > 0).Distinct())
-                {
-                    int wanted = hid;
-                    query = query.Where(w => _context.WorkerHabits.Any(wh => wh.WorkerId == w.WorkerId && wh.HabitId == wanted));
-                }
-
-            var workerList = await query.ToListAsync();
-            var results = new List<WorkerCardVM>();
-
-            // "Certified" chip (backend GetWorkers): legacy company certifications
-            // UNION non-revoked course certificates — one set-based query.
-            var certifiedWorkerIds = (await _context.WorkerCertifications
-                    .Select(wc => wc.WorkerID)
-                    .Union(_context.CourseCertificates
-                        .Where(cc => !cc.IsRevoked)
-                        .Select(cc => cc.WorkerID))
-                    .ToListAsync())
-                .ToHashSet();
-
-            foreach (var w in workerList)
+            var results = workers.Select(w =>
             {
-                var ratings = await _context.Reviews
-                    .Where(r => r.Interview != null && r.Interview.WorkerId == w.WorkerId)
-                    .Select(r => r.Rating).ToListAsync();
-                double avg = ratings.Any() ? Math.Round(ratings.Average(r => (double)(r ?? 0m)), 1) : 0.0;
-
-                var catNames = await _context.WorkerCategories
-                    .Where(wc => wc.WorkerId == w.WorkerId)
-                    .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId, (wc, c) => c.CategoryName)
-                    .Where(n => !string.IsNullOrEmpty(n)).Distinct().ToListAsync();
-
-                bool verified = await _context.PoliceRecords
-                    .AnyAsync(pr => pr.WorkerID == w.WorkerId && !pr.IsRevoked && pr.ExpiryDate > DateTime.Now);
-
-                results.Add(new WorkerCardVM
+                var cats = categoryRows.Where(c => c.WorkerId == w.WorkerId && !string.IsNullOrEmpty(c.CategoryName))
+                    .Select(c => c.CategoryName).Distinct().ToList();
+                var ratings = ratingRows.Where(r => r.WorkerId == w.WorkerId).Select(r => (double)r.Rating).ToList();
+                return new WorkerCardVM
                 {
                     Id = w.WorkerId,
                     Name = w.Name ?? "",
-                    Role = catNames.FirstOrDefault() ?? "General",
-                    City = w.Address ?? "N/A",
-                    Salary = w.Salary != null ? "Rs." + w.Salary.ToString() : "Not Set",
-                    Phone = w.Phone,
+                    Role = cats.FirstOrDefault() ?? "General",
+                    City = PublicLocality(w.Address),
+                    Salary = w.Salary != null ? $"Rs.{w.Salary}" : "Not Set",
+                    Phone = null,
                     Picture = w.Picture,
-                    Rating = avg.ToString("F1"),
+                    Rating = (ratings.Count > 0 ? Math.Round(ratings.Average(), 1) : 0).ToString("F1"),
                     Gender = w.Gender ?? "N/A",
-                    Categories = catNames,
-                    AvailableStatus = w.AvailableStatus ?? false,
-                    IsPoliceVerified = verified,
-                    IsCompanyCertified = certifiedWorkerIds.Contains(w.WorkerId)
-                });
-            }
-
-            ViewBag.Categories = await _context.Categories.Select(c => c.CategoryName).ToListAsync();
-            ViewBag.Habits = await _context.Habits.Where(h => h.IsActive).OrderBy(h => h.SortOrder)
+                    Categories = cats,
+                    AvailableStatus = (w.AvailableStatus ?? false) && !exclusiveIds.Contains(w.WorkerId),
+                    IsPoliceVerified = verifiedIds.Contains(w.WorkerId),
+                    IsCompanyCertified = certifiedIds.Contains(w.WorkerId)
+                };
+            }).ToList();
+            ViewBag.Categories = await _context.Categories.OrderBy(c => c.CategoryName).Select(c => c.CategoryName).ToListAsync();
+            ViewBag.Habits = await _context.Habits.Where(h => h.IsActive && h.IsWorkerSelectable && h.IsClientFilterable).OrderBy(h => h.SortOrder)
                 .Select(h => new { h.HabitId, h.Name }).ToListAsync();
             ViewBag.Search = search;
+            ViewBag.CurrentCity = currentCity ?? "All";
+            ViewBag.AppliedCity = cityFilter ?? "All";
             return View(results);
+        }
+
+        private static string PublicLocality(string? address)
+        {
+            if (string.IsNullOrWhiteSpace(address)) return "Location not specified";
+            var parts = address.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return parts.Length > 1 ? parts[^1] : "Locality shared after booking";
+        }
+
+        private async Task<string?> GetCurrentCityAsync()
+        {
+            var address = await _context.Clients.AsNoTracking()
+                .Where(c => c.ClientId == ClientId)
+                .Select(c => c.Address)
+                .FirstOrDefaultAsync();
+            return GeoHelper.CityFromAddress(address);
         }
 
         // ── FILTER SCREEN (separate page — RN FilterationScreen) ──────────────────
@@ -175,17 +207,21 @@ namespace FypWeb.Controllers
         {
             ViewBag.Categories = await _context.Categories.OrderBy(c => c.CategoryName)
                 .Select(c => new { c.CategoryId, c.CategoryName }).ToListAsync();
-            ViewBag.Habits = await _context.Habits.Where(h => h.IsActive)
+            ViewBag.Habits = await _context.Habits.Where(h => h.IsActive && h.IsWorkerSelectable && h.IsClientFilterable)
                 .OrderBy(h => h.SortOrder).ThenBy(h => h.Name)
                 .Select(h => new { h.HabitId, h.Name }).ToListAsync();
-            ViewBag.Cities = new[]
+            var currentCity = await GetCurrentCityAsync();
+            var cityOptions = new List<string> { "All" };
+            if (!string.IsNullOrWhiteSpace(currentCity)) cityOptions.Add(currentCity);
+            cityOptions.AddRange(new[]
             {
                 "Islamabad", "Rawalpindi", "Lahore", "Karachi",
                 "Faisalabad", "Peshawar", "Multan", "Quetta",
                 "Gujranwala", "Sialkot"
-            };
+            });
+            ViewBag.Cities = cityOptions.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             ViewBag.Gender = gender ?? "";
-            ViewBag.City = city ?? "";
+            ViewBag.City = !string.IsNullOrWhiteSpace(city) ? city.Trim() : currentCity ?? "All";
             ViewBag.SelectedCategories = categories ?? new List<string>();
             ViewBag.SelectedSubSkills = subSkills ?? new List<string>();
             ViewBag.SelectedHabits = habitIds ?? new List<int>();
@@ -256,14 +292,16 @@ namespace FypWeb.Controllers
                 .Select(wh => wh.Habit!.Name).ToListAsync();
 
             // Worker's published time slots (shown when this is a Part-Time engagement)
+            var bookedSlotIds = (await _rules.ActiveSlotReservations(id).Select(i => i.SlotId!.Value).ToListAsync()).ToHashSet();
             var slots = await _context.WorkerTimeSlots
-                .Where(s => s.WorkerId == id)
+                .Where(s => s.WorkerId == id && s.IsActive)
                 .OrderBy(s => s.StartTime)
                 .Select(s => new SlotVM
                 {
                     Id = s.Id,
                     StartTime = s.StartTime.ToString(@"hh\:mm"),
-                    EndTime = s.EndTime.ToString(@"hh\:mm")
+                    EndTime = s.EndTime.ToString(@"hh\:mm"),
+                    IsTaken = bookedSlotIds.Contains(s.Id)
                 }).ToListAsync();
 
             // Police character certificate (latest non-revoked) — ported from RN "Criminal Background Check"
@@ -332,9 +370,14 @@ namespace FypWeb.Controllers
             bool isTerminatedByThisClient = await _context.Interviews.AnyAsync(i =>
                 i.ClientId == ClientId && i.WorkerId == id && i.Status == "Terminated");
 
-            // Pass this flag to ViewBag so the UI/view can handle it if needed
-            ViewBag.CanHire = !isTerminatedByThisClient;
-            ViewBag.ContractStatus = isTerminatedByThisClient ? "Terminated by You" : "";
+            var hasExclusiveFullTime = await _rules.HasActiveExclusiveFullTimeJobAsync(id);
+            var canViewContact = await _context.Interviews.AnyAsync(i => i.ClientId == ClientId && i.WorkerId == id &&
+                (i.Status == "Finalized" || i.Status == "ResignationPending"));
+            var canHire = !hasActive && !isTerminatedByThisClient;
+            ViewBag.CanHire = canHire;
+            ViewBag.ContractStatus = hasActive ? "You already have an active request or contract with this worker" :
+                isTerminatedByThisClient ? "Rehiring is unavailable after you terminated this worker" :
+                hasExclusiveFullTime ? "An exclusive full-time job is active; only a non-exclusive request can be considered" : "";
 
             string jobType = GeoHelper.ClassifyJobType(client, worker);
             double distanceKm = 0, radius = worker.Radius > 0 ? worker.Radius : 5.0;
@@ -349,9 +392,9 @@ namespace FypWeb.Controllers
             {
                 Id = worker.WorkerId,
                 Name = worker.Name ?? "",
-                Cnic = worker.Cnic,
-                Phone = worker.Phone,
-                Address = worker.Address,
+                Cnic = null,
+                Phone = canViewContact ? worker.Phone : null,
+                Address = PublicLocality(worker.Address),
                 Picture = worker.Picture,
                 Gender = worker.Gender,
                 Age = worker.Age,
@@ -371,6 +414,10 @@ namespace FypWeb.Controllers
                 Slots = slots,
                 Reviews = reviews,
                 HasActiveInterview = hasActive,
+                CanViewContact = canViewContact,
+                CanHire = canHire,
+                IsExclusiveFullTime = hasExclusiveFullTime,
+                ContractStatus = ViewBag.ContractStatus,
                 PoliceCertStatus = verified ? "Verified" : (policeCert != null ? "Expired" : "NotIssued"),
                 PoliceCertNo = policeCert?.CertificateNo,
                 PoliceCharacterStatus = policeCert?.CharacterStatus,
@@ -392,44 +439,38 @@ namespace FypWeb.Controllers
 
         // ── BOOK INTERVIEW ────────────────────────────────────────────────────────
         [HttpGet]
-        public async Task<IActionResult> BookInterview(int workerId, string? date = null, string? time = null)
+        public async Task<IActionResult> BookInterview(int workerId, string? date = null, string? time = null, bool allowNonExclusive = false)
         {
             var worker = await _context.Workers.FindAsync(workerId);
-            if (worker == null) return NotFound();
             var client = await _context.Clients.FindAsync(ClientId);
-
-            bool isPartTime = GeoHelper.ClassifyJobType(client, worker) == "Part-Time";
-            double workerRadius = worker.Radius > 0 ? worker.Radius : 5.0;
+            if (worker == null || client == null) return NotFound();
+            var hasActive = await _context.Interviews.AnyAsync(i => i.ClientId == ClientId && i.WorkerId == workerId &&
+                (i.Status == "Pending" || i.Status == "Approved" || i.Status == "Finalized" || i.Status == "ResignationPending"));
+            var terminated = await _context.Interviews.AnyAsync(i => i.ClientId == ClientId && i.WorkerId == workerId && i.Status == "Terminated");
+            if (hasActive || terminated)
+            {
+                TempData["Error"] = hasActive ? "You already have an active request or contract with this worker." : "This worker cannot be rehired after your termination.";
+                return RedirectToAction("WorkerDetail", new { id = workerId });
+            }
+            var isPartTime = GeoHelper.ClassifyJobType(client, worker) == "Part-Time";
             double distanceKm = 0;
-            if (client != null && client.Latitude.HasValue && client.Longitude.HasValue && worker.Latitude.HasValue && worker.Longitude.HasValue)
-                distanceKm = GeoHelper.CalculateHaversineDistance(
-                    Convert.ToDouble(client.Latitude.Value), Convert.ToDouble(client.Longitude.Value),
+            if (client.Latitude.HasValue && client.Longitude.HasValue && worker.Latitude.HasValue && worker.Longitude.HasValue)
+                distanceKm = GeoHelper.CalculateHaversineDistance(Convert.ToDouble(client.Latitude.Value), Convert.ToDouble(client.Longitude.Value),
                     Convert.ToDouble(worker.Latitude.Value), Convert.ToDouble(worker.Longitude.Value));
-
             DateTime day = DateTime.Today;
             if (!string.IsNullOrWhiteSpace(date) && DateTime.TryParse(date, out var parsed)) day = parsed.Date;
-            var dayStart = day; var dayEnd = day.AddDays(1);
-
-            var rawSlots = await _context.WorkerTimeSlots.Where(s => s.WorkerId == workerId)
-                .OrderBy(s => s.StartTime).ToListAsync();
-
-            var bookedSlotIds = await _context.Interviews
-                .Where(i => i.WorkerId == workerId && i.SlotId != null && i.InterviewDate != null &&
-                            i.InterviewDate >= dayStart && i.InterviewDate < dayEnd &&
-                            i.Status != "Rejected" && i.Status != "JobRejected" &&
-                            i.Status != "Terminated" && i.Status != "Resigned" && i.Status != "Completed")
-                .Select(i => i.SlotId!.Value).ToListAsync();
-
+            var rawSlots = await _context.WorkerTimeSlots.Where(s => s.WorkerId == workerId && s.IsActive).OrderBy(s => s.StartTime).ToListAsync();
+            var bookedSlotIds = (await _rules.ActiveSlotReservations(workerId).Select(i => i.SlotId!.Value).ToListAsync()).ToHashSet();
             var vm = new BookInterviewVM
             {
                 WorkerId = workerId,
                 WorkerName = worker.Name ?? "Worker",
                 WorkerPicture = worker.Picture,
                 IsPartTime = isPartTime,
-                HasSlots = rawSlots.Any(),
-                Radius = workerRadius,
+                HasSlots = rawSlots.Any(s => !bookedSlotIds.Contains(s.Id)),
+                Radius = worker.Radius > 0 ? worker.Radius : 5.0,
                 DistanceKm = Math.Round(distanceKm, 2),
-                ClientAddress = client?.Address ?? "",
+                ClientAddress = client.Address ?? "",
                 Slots = rawSlots.Select(s => new SlotVM
                 {
                     Id = s.Id,
@@ -439,100 +480,76 @@ namespace FypWeb.Controllers
                 }).ToList()
             };
             ViewBag.Date = day.ToString("yyyy-MM-dd");
-            // Clock picker (RN "Interview Time" selector): keeps the chosen time
-            // across the date-change reload; defaults to the current time.
-            ViewBag.Time = TimeSpan.TryParse(time, out var pickedTime)
-                ? pickedTime.ToString(@"hh\:mm")
-                : DateTime.Now.ToString("HH:mm");
+            ViewBag.Time = TimeSpan.TryParse(time, out var pickedTime) ? pickedTime.ToString(@"hh\:mm") : DateTime.Now.ToString("HH:mm");
+            ViewBag.AllowNonExclusive = allowNonExclusive;
+            ViewBag.HasActiveFullTime = await _rules.HasActiveFullTimeJobAsync(workerId);
             return View(vm);
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> BookInterview(int workerId, DateTime interviewDate, string? address,
-            int? slotId, bool isResidenceProvided = false, string? interviewTime = null)
+            int? slotId, bool isResidenceProvided = false, string? interviewTime = null, bool isExclusive = false)
         {
             var client = await _context.Clients.FindAsync(ClientId);
             if (client == null) { TempData["Error"] = "Client profile not found."; return RedirectToAction("FindService"); }
-            var worker = await _context.Workers.FindAsync(workerId);
+            if (TimeSpan.TryParse(interviewTime, out var picked)) interviewDate = interviewDate.Date.Add(picked);
+            var retryRoute = new
+            {
+                workerId,
+                date = interviewDate == default ? DateTime.Today.ToString("yyyy-MM-dd") : interviewDate.ToString("yyyy-MM-dd"),
+                time = interviewTime,
+                allowNonExclusive = !isExclusive
+            };
+            if (interviewDate == default || interviewDate < DateTime.Now.AddMinutes(-1))
+            { TempData["Error"] = "Choose a current or future interview date and time."; return RedirectToAction("BookInterview", retryRoute); }
+            if (address?.Length > 1000)
+            { TempData["Error"] = "Address must be 1,000 characters or fewer."; return RedirectToAction("BookInterview", retryRoute); }
+            if (await _context.Interviews.AnyAsync(i => i.ClientId == ClientId && i.WorkerId == workerId && i.Status == "Terminated"))
+            { TempData["Error"] = "You cannot rehire a worker whose contract you terminated."; return RedirectToAction("WorkerDetail", new { id = workerId }); }
+            if (await _context.Interviews.AnyAsync(i => i.ClientId == ClientId && i.WorkerId == workerId &&
+                (i.Status == "Pending" || i.Status == "Approved" || i.Status == "Finalized" || i.Status == "ResignationPending")))
+            { TempData["Error"] = "You already have an active request or contract with this worker."; return RedirectToAction("WorkerDetail", new { id = workerId }); }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var worker = await _rules.LockWorkerAsync(workerId);
             if (worker == null) { TempData["Error"] = "Worker not found."; return RedirectToAction("FindService"); }
-
-            // Prevent the client who terminated this worker from booking them again
-            bool isTerminatedByThisClient = await _context.Interviews.AnyAsync(i =>
-                i.ClientId == ClientId && i.WorkerId == workerId && i.Status == "Terminated");
-            if (isTerminatedByThisClient)
-            {
-                TempData["Error"] = "You cannot hire a worker whose contract you have previously terminated.";
-                return RedirectToAction("WorkerDetail", new { id = workerId });
-            }
-
-            // RN posts the full datetime (date picker + clock picker combined);
-            // here the two inputs are merged into one InterviewDate value.
-            if (TimeSpan.TryParse(interviewTime, out var picked))
-            {
-                interviewDate = interviewDate.Date.Add(picked);
-            }
-
-            bool alreadyPending = await _context.Interviews.AnyAsync(i =>
-                i.ClientId == ClientId && i.WorkerId == workerId &&
-                (i.Status == "Pending" || i.Status == "Approved"));
-            if (alreadyPending)
-            {
-                TempData["Error"] = "You already have an active request with this worker.";
-                return RedirectToAction("WorkerDetail", new { id = workerId });
-            }
-
             var model = new Interview
             {
                 ClientId = ClientId,
                 WorkerId = workerId,
                 InterviewDate = interviewDate,
-                Address = string.IsNullOrWhiteSpace(address) ? client.Address : address,
+                Address = string.IsNullOrWhiteSpace(address) ? client.Address : address.Trim(),
                 Status = "Pending",
                 WorkerDecision = "Pending",
                 JobType = GeoHelper.ClassifyJobType(client, worker)
             };
-
-            // Route values kept on validation errors so the user's date/time
-            // picks survive the round-trip.
-            var retryRoute = new { workerId, date = interviewDate.ToString("yyyy-MM-dd"), time = interviewTime };
-
+            model.IsExclusive = model.JobType == "Full-Time" && isExclusive;
+            if (model.IsExclusive && await _rules.HasActiveFullTimeJobAsync(workerId))
+            {
+                TempData["Error"] = "This worker already has an active full-time job. You may proceed with a non-exclusive request, but final confirmation must wait until that job ends.";
+                return RedirectToAction("BookInterview", new { workerId, date = interviewDate.ToString("yyyy-MM-dd"), time = interviewTime, allowNonExclusive = true });
+            }
             if (model.JobType == "Part-Time")
             {
-                model.IsResidenceProvided = false;
-                if (slotId == null)
-                {
-                    TempData["Error"] = "Please select one of the worker's time slots.";
-                    return RedirectToAction("BookInterview", retryRoute);
-                }
-                var chosen = await _context.WorkerTimeSlots.FindAsync(slotId.Value);
-                if (chosen == null || chosen.WorkerId != workerId)
-                {
-                    TempData["Error"] = "That time slot does not belong to this worker.";
-                    return RedirectToAction("BookInterview", retryRoute);
-                }
-                var dayStart = interviewDate.Date; var dayEnd = dayStart.AddDays(1);
-                bool slotTaken = await _context.Interviews.AnyAsync(i =>
-                    i.WorkerId == workerId && i.SlotId == slotId && i.InterviewDate != null &&
-                    i.InterviewDate >= dayStart && i.InterviewDate < dayEnd &&
-                    i.Status != "Rejected" && i.Status != "JobRejected" &&
-                    i.Status != "Terminated" && i.Status != "Resigned" && i.Status != "Completed");
+                model.IsResidenceProvided = false; model.IsExclusive = false;
+                if (slotId == null) { TempData["Error"] = "Please select an available time slot."; return RedirectToAction("BookInterview", retryRoute); }
+                var chosen = await _context.WorkerTimeSlots.FirstOrDefaultAsync(s => s.Id == slotId.Value && s.WorkerId == workerId);
+                if (chosen == null || !chosen.IsActive)
+                { TempData["Error"] = "That slot is no longer available. Refresh and choose another."; return RedirectToAction("BookInterview", retryRoute); }
+                var matchingSlotIds = await _context.WorkerTimeSlots.Where(s => s.WorkerId == workerId &&
+                    s.StartTime == chosen.StartTime && s.EndTime == chosen.EndTime).Select(s => s.Id).ToListAsync();
+                var slotTaken = await _context.Interviews.AnyAsync(i => i.WorkerId == workerId && i.SlotId != null &&
+                    matchingSlotIds.Contains(i.SlotId.Value) && i.Status != "Rejected" && i.Status != "JobRejected" &&
+                    i.Status != "Terminated" && i.Status != "Resigned" && i.Status != "ResignationPending" && i.Status != "Completed");
                 if (slotTaken)
-                {
-                    TempData["Error"] = "That time slot is already booked for this date. Please pick another.";
-                    return RedirectToAction("BookInterview", retryRoute);
-                }
+                { TempData["Error"] = "That recurring slot is reserved by another active interview, regardless of its displayed date."; return RedirectToAction("BookInterview", retryRoute); }
                 model.SlotId = slotId;
             }
-            else
-            {
-                model.SlotId = null;
-                model.IsResidenceProvided = isResidenceProvided;
-            }
-
+            else { model.SlotId = null; model.IsResidenceProvided = isResidenceProvided; }
             _context.Interviews.Add(model);
             await _context.SaveChangesAsync();
-
+            await transaction.CommitAsync();
             TempData["Success"] = $"{model.JobType} interview request sent to {worker.Name}!";
             return RedirectToAction("Dashboard");
         }
@@ -554,7 +571,8 @@ namespace FypWeb.Controllers
                     Time = i.InterviewDate != null ? i.InterviewDate.Value.ToString("MMM dd, hh:mm tt") : "Not Set",
                     Status = i.Status ?? "",
                     WorkerDecision = i.WorkerDecision ?? "",
-                    JobType = i.JobType ?? "Full-Time"
+                    JobType = i.JobType ?? "Full-Time",
+                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time"
                 }).ToListAsync();
             return View(accepted);
         }
@@ -563,22 +581,24 @@ namespace FypWeb.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> CreateHiring(int interviewId, string? address)
         {
-            var interview = await _context.Interviews.FindAsync(interviewId);
-            if (interview == null) { TempData["Error"] = "Interview not found."; return RedirectToAction("ActiveRequests"); }
-
+            if (address?.Length > 1000) { TempData["Error"] = "Address must be 1,000 characters or fewer."; return RedirectToAction("ActiveRequests"); }
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var interview = await _workflow.LockInterviewAsync(interviewId);
+            if (interview == null || interview.ClientId != ClientId) { TempData["Error"] = "Interview not found."; return RedirectToAction("ActiveRequests"); }
+            if (interview.Status != "Pending" || interview.WorkerDecision != "Accepted")
+            { TempData["Error"] = "Only an interview accepted by the worker can become a job offer."; return RedirectToAction("ActiveRequests"); }
+            if (await _context.Hiring.AnyAsync(h => h.InterviewId == interviewId))
+            { TempData["Error"] = "A job offer already exists for this interview."; return RedirectToAction("ActiveRequests"); }
             interview.Status = "Approved";
-            string? finalAddress = string.IsNullOrWhiteSpace(address) ? interview.Address : address;
-
             _context.Hiring.Add(new Hiring
             {
                 InterviewId = interviewId,
                 WorkerDecision = "Pending",
                 HiringDecision = "Pending",
-                Address = finalAddress,
+                Address = string.IsNullOrWhiteSpace(address) ? interview.Address : address.Trim(),
                 HiringDate = DateTime.Now
             });
-            await _context.SaveChangesAsync();
-
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
             TempData["Success"] = "Interview approved. Job offer sent to the worker.";
             return RedirectToAction("ActiveRequests");
         }
@@ -587,12 +607,13 @@ namespace FypWeb.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> WithdrawRequest(int interviewId)
         {
-            var interview = await _context.Interviews.FindAsync(interviewId);
-            if (interview != null)
-            {
-                _context.Interviews.Remove(interview);
-                await _context.SaveChangesAsync();
-            }
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var interview = await _workflow.LockInterviewAsync(interviewId);
+            if (interview == null || interview.ClientId != ClientId) { TempData["Error"] = "Request not found."; return RedirectToAction("ActiveRequests"); }
+            if (interview.Status != "Pending" || await _context.Hiring.AnyAsync(h => h.InterviewId == interviewId))
+            { TempData["Error"] = "Only a pending request without a job offer can be withdrawn."; return RedirectToAction("ActiveRequests"); }
+            interview.Status = "Rejected"; interview.WorkerDecision = "Rejected";
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
             TempData["Success"] = "Request withdrawn.";
             return RedirectToAction("ActiveRequests");
         }
@@ -613,6 +634,7 @@ namespace FypWeb.Controllers
                     OtherPartyPicture = h.Interview.Worker != null ? h.Interview.Worker.Picture : null,
                     Location = h.Address ?? "N/A",
                     JobType = h.Interview.JobType ?? "Full-Time",
+                    IsExclusive = h.Interview.IsExclusive && h.Interview.JobType == "Full-Time",
                     Status = h.Interview.Status ?? "",
                     HiringWorkerDecision = h.WorkerDecision ?? "Pending",
                     HiringDecision = h.HiringDecision ?? "Pending"
@@ -624,15 +646,32 @@ namespace FypWeb.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> FinalizeHiring(int hiringId)
         {
-            var hiring = await _context.Hiring.FindAsync(hiringId);
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var interviewId = await _context.Hiring.AsNoTracking().Where(h => h.HiringId == hiringId)
+                .Select(h => h.InterviewId).FirstOrDefaultAsync();
+            if (interviewId == null) { TempData["Error"] = "Hiring record not found."; return RedirectToAction("WorkerDecisions"); }
+            var interview = await _workflow.LockInterviewAsync(interviewId.Value);
+            if (interview == null || interview.ClientId != ClientId)
+            { TempData["Error"] = "Hiring record not found."; return RedirectToAction("WorkerDecisions"); }
+            var hiring = await _context.Hiring.FirstOrDefaultAsync(h => h.HiringId == hiringId && h.InterviewId == interviewId.Value);
             if (hiring == null) { TempData["Error"] = "Hiring record not found."; return RedirectToAction("WorkerDecisions"); }
-
-            hiring.HiringDecision = "Accepted";
-            hiring.HiringDate = DateTime.Now;
-            var interview = await _context.Interviews.FindAsync(hiring.InterviewId);
-            if (interview != null) interview.Status = "Finalized";
-            await _context.SaveChangesAsync();
-
+            if (hiring.WorkerDecision != "Accepted" || hiring.HiringDecision != "Pending" || interview.Status != "Approved")
+            { TempData["Error"] = "This offer is not awaiting final client confirmation."; return RedirectToAction("WorkerDecisions"); }
+            if (interview.JobType == "Full-Time" && interview.WorkerId.HasValue)
+            {
+                if (await _rules.LockWorkerAsync(interview.WorkerId.Value) == null)
+                { TempData["Error"] = "Worker not found."; return RedirectToAction("WorkerDecisions"); }
+                if (await _rules.HasActiveFullTimeJobAsync(interview.WorkerId.Value, interview.InterviewId))
+                { TempData["Error"] = "This worker already has an active full-time job. They must leave it before this offer can be confirmed."; return RedirectToAction("WorkerDecisions"); }
+            }
+            hiring.HiringDecision = "Accepted"; hiring.HiringDate = DateTime.Now; interview.Status = "Finalized";
+            if (interview.JobType == "Full-Time" && interview.IsExclusive && interview.WorkerId.HasValue)
+            {
+                var worker = await _context.Workers.FindAsync(interview.WorkerId.Value);
+                if (worker != null) worker.AvailableStatus = false;
+            }
+            await _workflow.SetPartTimeSlotActiveAsync(interview, false);
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
             TempData["Success"] = "Worker hired successfully!";
             return RedirectToAction("WorkerDecisions");
         }
@@ -641,6 +680,7 @@ namespace FypWeb.Controllers
         public async Task<IActionResult> Resignations()
         {
             int clientId = ClientId;
+            await _workflow.ProcessDueAsync(clientId: clientId);
             var list = await _context.Resignations
                 .Include(r => r.Interview).ThenInclude(i => i!.Worker)
                 .Where(r => r.Interview!.ClientId == clientId)
@@ -661,13 +701,14 @@ namespace FypWeb.Controllers
 
         public async Task<IActionResult> ResignationDetail(int id)
         {
+            await _workflow.ProcessDueAsync(clientId: ClientId);
             var r = await _context.Resignations
                 .Include(x => x.Interview).ThenInclude(i => i!.Worker)
-                .FirstOrDefaultAsync(x => x.ResignationId == id);
+                .FirstOrDefaultAsync(x => x.ResignationId == id && x.Interview != null && x.Interview.ClientId == ClientId);
             if (r == null) return NotFound();
 
             var interview = r.Interview;
-            bool isConfirmed = interview?.Status == "Resigned";
+            bool isConfirmed = ResignationWorkflowService.IsAccepted(r);
             int interviewId = r.InterviewId ?? 0;
 
             // Both closing reviews for this contract (RN GetResignationDetail):
@@ -712,6 +753,8 @@ namespace FypWeb.Controllers
                 };
             }
 
+            var workerReview = MapReview("Worker", interview?.Worker?.Name ?? "Worker");
+            var clientReview = MapReview("Client", "You");
             var vm = new ResignationVM
             {
                 ResignationId = r.ResignationId,
@@ -723,64 +766,38 @@ namespace FypWeb.Controllers
                 SubmittedDate = r.SubmittedDate != null ? r.SubmittedDate.Value.ToString("dd MMM yyyy") : "",
                 Status = interview?.Status ?? "",
                 IsConfirmed = isConfirmed,
-                WorkerReview = MapReview("Worker", interview?.Worker?.Name ?? "Worker"),
-                ClientReview = MapReview("Client", "You"),
-                CriteriaGroups = isConfirmed ? new List<CriteriaGroupVM>() : await LoadCriteriaGroupsAsync(interview?.WorkerId ?? 0)
+                AcceptanceMode = r.AcceptanceMode,
+                AcceptedAt = r.AcceptedAtUtc?.ToString("dd MMM yyyy HH:mm 'UTC'"),
+                WorkerReview = workerReview,
+                ClientReview = clientReview,
+                CriteriaGroups = clientReview == null ? await LoadCriteriaGroupsAsync(interview?.WorkerId ?? 0) : new List<CriteriaGroupVM>()
             };
             return View(vm);
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ConfirmResignation(int interviewId, string? comment,
+        public async Task<IActionResult> ConfirmResignation(int interviewId, int? resignationId, string? comment,
             List<CriteriaScoreInput>? criteriaScores, int? rating)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            var interview = await _context.Interviews.FindAsync(interviewId);
-            if (interview == null) { TempData["Error"] = "Interview not found."; return RedirectToAction("Resignations"); }
-
-            var resignation = await _context.Resignations
-                .Where(r => r.InterviewId == interviewId).OrderByDescending(r => r.SubmittedDate).FirstOrDefaultAsync();
-            if (resignation == null) { TempData["Error"] = "No resignation on record."; return RedirectToAction("Resignations"); }
-
-            if (interview.Status == "Resigned") { TempData["Error"] = "Already confirmed."; return RedirectToAction("Resignations"); }
-
-            bool alreadyReviewed = await _context.Reviews.AnyAsync(r => r.InterviewId == interviewId && r.ReviewerRole == "Client");
-            if (!alreadyReviewed)
+            try
             {
-                // The client's closing review is criteria-scored; the overall rating
-                // is derived from the criteria, never sent by the form.
-                var criteria = await BuildCriteriaRatingsAsync(interviewId, criteriaScores);
-                if (criteria.Error != null)
+                var notice = await _workflow.ConfirmWithClientReviewAsync(ClientId, interviewId, resignationId, async () =>
                 {
-                    TempData["Error"] = criteria.Error;
-                    return RedirectToAction("ResignationDetail", new { id = resignation.ResignationId });
-                }
-
-                _context.Reviews.Add(new Review
-                {
-                    InterviewId = interviewId,
-                    Rating = criteria.Average,
-                    Comment = comment,
-                    ReviewerRole = "Client",
-                    ReviewDate = DateTime.Now,
-                    ReviewCriteriaRatings = criteria.Rows
+                    if (string.IsNullOrWhiteSpace(comment) || comment.Trim().Length > 4000)
+                        throw new ResignationWorkflowException(400, "Review remarks are required and must be at most 4,000 characters.");
+                    var criteria = await BuildCriteriaRatingsAsync(interviewId, criteriaScores);
+                    if (criteria.Error != null) throw new ResignationWorkflowException(400, criteria.Error);
+                    return new Review { Rating = criteria.Average, Comment = comment?.Trim(), ReviewCriteriaRatings = criteria.Rows };
                 });
+                TempData["Success"] = notice.AcceptanceMode == "Automatic" ? "Your closing review has been saved." : "Resignation accepted and your closing review was saved.";
+                return RedirectToAction("ResignationDetail", new { id = notice.ResignationId });
             }
-            interview.Status = "Resigned";
-
-            // Resignation ke baad worker dobara available ho jaye (global pool ke liye)
-            var worker = await _context.Workers.FindAsync(interview.WorkerId);
-            if (worker != null)
+            catch (ResignationWorkflowException ex)
             {
-                worker.AvailableStatus = true;
+                TempData["Error"] = ex.Message;
+                return resignationId.HasValue ? RedirectToAction("ResignationDetail", new { id = resignationId.Value }) : RedirectToAction("Resignations");
             }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-
-            TempData["Success"] = "Resignation confirmed and review submitted.";
-            return RedirectToAction("Resignations");
         }
 
         // ── CRITERIA-BASED CLOSING REVIEWS (api Dashboard GetReviewCriteria) ─────
@@ -887,12 +904,13 @@ namespace FypWeb.Controllers
         [HttpGet]
         public async Task<IActionResult> Terminate(int interviewId)
         {
-            var interview = await _context.Interviews
-                .Include(i => i.Worker).FirstOrDefaultAsync(i => i.InterviewId == interviewId);
+            var interview = await _context.Interviews.Include(i => i.Worker)
+                .FirstOrDefaultAsync(i => i.InterviewId == interviewId && i.ClientId == ClientId);
             if (interview == null) return NotFound();
-
-            ViewBag.InterviewId = interviewId;
-            ViewBag.WorkerName = interview.Worker?.Name ?? "Worker";
+            var canTerminate = !ContractRules.IsEnded(interview.Status) && await _context.Hiring.AnyAsync(h =>
+                h.InterviewId == interviewId && h.HiringDecision == "Accepted");
+            if (!canTerminate) { TempData["Error"] = "Only an active hired contract can be terminated."; return RedirectToAction("Dashboard"); }
+            ViewBag.InterviewId = interviewId; ViewBag.WorkerName = interview.Worker?.Name ?? "Worker";
             ViewBag.WorkerPicture = interview.Worker?.Picture;
             ViewBag.CriteriaGroups = await LoadCriteriaGroupsAsync(interview.WorkerId ?? 0);
             return View();
@@ -903,34 +921,31 @@ namespace FypWeb.Controllers
         public async Task<IActionResult> Terminate(int interviewId, string reason, string? remarks,
             List<CriteriaScoreInput>? criteriaScores, int? rating)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            var interview = await _context.Interviews.FindAsync(interviewId);
-            if (interview == null) { TempData["Error"] = "Job record not found."; return RedirectToAction("Dashboard"); }
+            if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length > 4000 || remarks?.Length > 4000)
+            { TempData["Error"] = "A termination reason of at most 4,000 characters is required; remarks have the same limit."; return RedirectToAction("Terminate", new { interviewId }); }
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var interview = await _workflow.LockInterviewAsync(interviewId);
+            if (interview == null || interview.ClientId != ClientId)
+            { TempData["Error"] = "Job record not found."; return RedirectToAction("Dashboard"); }
+            if (ContractRules.IsEnded(interview.Status) || !await _context.Hiring.AnyAsync(h => h.InterviewId == interviewId && h.HiringDecision == "Accepted"))
+            { TempData["Error"] = "This contract is not active."; return RedirectToAction("Dashboard"); }
+            if (await _context.Terminations.AnyAsync(t => t.InterviewId == interviewId))
+            { TempData["Error"] = "A termination already exists for this contract."; return RedirectToAction("Dashboard"); }
 
-            if (interview.Status == "Terminated") { TempData["Error"] = "Already terminated."; return RedirectToAction("Dashboard"); }
-
-            // Validate and score the per-criterion ratings before writing anything.
-            // The legacy single-star "rating" parameter is ignored (kept for binding
-            // compatibility with the old form).
-            var criteria = await BuildCriteriaRatingsAsync(interviewId, criteriaScores);
-            if (criteria.Error != null)
+            var alreadyReviewed = await _context.Reviews.AnyAsync(r => r.InterviewId == interviewId && r.ReviewerRole == "Client");
+            if (alreadyReviewed)
+            { TempData["Error"] = "A closing review already exists for this contract."; return RedirectToAction("Dashboard"); }
             {
-                TempData["Error"] = criteria.Error;
-                return RedirectToAction("Terminate", new { interviewId });
-            }
-
-            bool alreadyReviewed = await _context.Reviews.AnyAsync(r => r.InterviewId == interviewId && r.ReviewerRole == "Client");
-            if (!alreadyReviewed)
-            {
-                // EF fills in Review_ID on the children through the navigation property,
-                // so a single SaveChanges writes the review and its criteria rows together.
+                var criteria = await BuildCriteriaRatingsAsync(interviewId, criteriaScores);
+                if (criteria.Error != null)
+                { TempData["Error"] = criteria.Error; return RedirectToAction("Terminate", new { interviewId }); }
                 _context.Reviews.Add(new Review
                 {
                     InterviewId = interviewId,
                     Rating = criteria.Average,
-                    Comment = remarks,
+                    Comment = remarks?.Trim(),
                     ReviewerRole = "Client",
-                    ReviewDate = DateTime.Now,
+                    ReviewDate = ResignationWorkflowService.BusinessLocal(DateTime.UtcNow),
                     ReviewCriteriaRatings = criteria.Rows
                 });
             }
@@ -939,20 +954,11 @@ namespace FypWeb.Controllers
             {
                 InterviewId = interviewId,
                 TerminatedDate = DateOnly.FromDateTime(DateTime.Now),
-                TerminatedReason = reason
+                TerminatedReason = reason.Trim()
             });
-
-            // IMPORTANT: Isay worker.AvailableStatus = false NAHI karna, taake doosre clients ke liye worker available rahay.
-            // Sirf is specific client ke liye interview status "Terminated" rahegi jo ke upar check ho rahi hai.
-            var worker = await _context.Workers.FindAsync(interview.WorkerId);
-            if (worker != null)
-            {
-                worker.AvailableStatus = true; // Baqi clients ke liye worker available hi rahega
-            }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-
+            await _workflow.SetPartTimeSlotActiveAsync(interview, true);
+            await _rules.ReleaseExclusiveAvailabilityAsync(interview);
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
             TempData["Success"] = "Contract terminated successfully.";
             return RedirectToAction("Dashboard");
         }
@@ -1022,74 +1028,45 @@ namespace FypWeb.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> EditProfile(EditClientProfileVM model)
         {
-            if (string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.Phone)
-                || string.IsNullOrWhiteSpace(model.Address) || string.IsNullOrWhiteSpace(model.Email))
-            {
-                ModelState.AddModelError(string.Empty, "Please fill out all fundamental profile details.");
-            }
-
-            if (!string.IsNullOrEmpty(model.Password) && model.Password != model.ConfirmPassword)
-            {
-                ModelState.AddModelError(string.Empty, "Passwords do not match.");
-            }
-
+            if (string.IsNullOrWhiteSpace(model.Name) || !AccountController.ValidPhone(model.Phone) ||
+                string.IsNullOrWhiteSpace(model.Address) || !AccountController.ValidEmail(model.Email))
+                ModelState.AddModelError(string.Empty, "Enter a name, valid phone, address, and valid email address.");
+            if (!string.IsNullOrEmpty(model.Password) && model.Password != "********" &&
+                (!PasswordService.IsValidNewPassword(model.Password) || model.Password != model.ConfirmPassword))
+                ModelState.AddModelError(string.Empty, "New passwords must match and contain 8–100 characters.");
             var existing = await _context.Clients.FindAsync(ClientId);
             if (existing == null) return NotFound();
-
-            if (!ModelState.IsValid)
-            {
-                model.CurrentPicture = existing.Picture;
-                return View(model);
-            }
-
+            var email = model.Email?.Trim().ToLowerInvariant() ?? "";
+            if (await _context.Clients.AnyAsync(c => c.ClientId != ClientId && c.Email.ToLower() == email))
+                ModelState.AddModelError(nameof(model.Email), "That email is already registered.");
+            if (!ModelState.IsValid) { model.CurrentPicture = existing.Picture; return View(model); }
             try
             {
-                // Optional new photo — same rule as UpdateClient: only replaces
-                // the stored Picture when a valid file is supplied.
                 if (model.PictureFile != null)
                 {
-                    string safeFileName = model.Email!.Replace("@", "_").Replace(".", "_");
-                    string? imagePath = await _images.SaveImageAsync(model.PictureFile, safeFileName);
+                    var imagePath = await _images.SaveImageAsync(model.PictureFile);
                     if (imagePath == "Invalid")
-                    {
-                        ModelState.AddModelError(string.Empty, "Only .jpg, .jpeg, and .png files are allowed.");
-                        model.CurrentPicture = existing.Picture;
-                        return View(model);
-                    }
+                    { ModelState.AddModelError(string.Empty, "Choose a valid JPG or PNG image up to 5 MB."); model.CurrentPicture = existing.Picture; return View(model); }
                     if (imagePath != null) existing.Picture = imagePath;
                 }
-
-                existing.Name = model.Name!;
-                existing.Phone = model.Phone!;
-                existing.Address = model.Address;
-                existing.Email = model.Email!;
-
-                // Blank password keeps the current one; "********" is the
-                // masked sentinel the API ignores (legacy RN prefill).
-                if (!string.IsNullOrEmpty(model.Password) && model.Password != "********")
-                {
-                    existing.Password = model.Password;
-                }
-
+                existing.Name = model.Name!.Trim(); existing.Phone = model.Phone!.Trim(); existing.Address = model.Address!.Trim(); existing.Email = email;
+                if (!string.IsNullOrEmpty(model.Password) && model.Password != "********") existing.Password = _passwords.Hash(model.Password!);
                 await _context.SaveChangesAsync();
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError(string.Empty, "Update failed: " + (ex.InnerException?.Message ?? ex.Message));
-                model.CurrentPicture = existing.Picture;
-                return View(model);
+                _logger.LogError(ex, "Client {ClientId} profile update failed", ClientId);
+                ModelState.AddModelError(string.Empty, "Profile update could not be completed. Please try again.");
+                model.CurrentPicture = existing.Picture; return View(model);
             }
-
-            // Keep the cookie (topbar name/photo/email claims) in sync.
-            await RefreshSignInAsync(existing.ClientId, existing.Name, existing.Picture, existing.Email);
-
+            await RefreshSignInAsync(existing.ClientId, existing.Name, existing.Picture, existing.Email, existing.Password);
             TempData["Success"] = "Profile updated successfully!";
             return RedirectToAction("Profile");
         }
 
         // Re-issues the auth cookie after a profile edit so the sidebar shows
         // the new name/photo without a re-login (same claims as Account/Login).
-        private async Task RefreshSignInAsync(int clientId, string name, string? picture, string email)
+        private async Task RefreshSignInAsync(int clientId, string name, string? picture, string email, string? storedPassword)
         {
             var claims = new List<Claim>
             {
@@ -1097,7 +1074,8 @@ namespace FypWeb.Controllers
                 new(ClaimTypes.Name, string.IsNullOrWhiteSpace(name) ? "Client" : name),
                 new(ClaimTypes.Role, "Client"),
                 new("Picture", picture ?? ""),
-                new("Email", email ?? "")
+                new("Email", email ?? ""),
+                new("PasswordStamp", PasswordService.Stamp(storedPassword))
             };
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await HttpContext.SignInAsync(
@@ -1115,7 +1093,7 @@ namespace FypWeb.Controllers
             var client = await _context.Clients.FindAsync(ClientId);
             if (client == null) return NotFound();
 
-            var workers = await _context.Workers
+            var workers = await _rules.DiscoverableByClient(_context.Workers.AsNoTracking(), ClientId)
                 .Where(w => w.Latitude.HasValue && w.Longitude.HasValue)
                 .Select(w => new
                 {
@@ -1124,7 +1102,7 @@ namespace FypWeb.Controllers
                     w.Latitude,
                     w.Longitude,
                     Role = _context.WorkerCategories
-                        .Where(wc => wc.WorkerId == w.WorkerId)
+                        .Where(wc => wc.WorkerId == w.WorkerId).OrderByDescending(wc => wc.IsPrimary)
                         .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId, (wc, c) => c.CategoryName)
                         .FirstOrDefault()
                 })
@@ -1135,8 +1113,9 @@ namespace FypWeb.Controllers
                 Id = w.WorkerId,
                 Name = w.Name ?? "Worker",
                 Role = string.IsNullOrWhiteSpace(w.Role) ? "Service Worker" : w.Role!,
-                Lat = Convert.ToDouble(w.Latitude!.Value),
-                Lng = Convert.ToDouble(w.Longitude!.Value)
+                // Approximate public areas (~1–2 km), never exact worker home pins.
+                Lat = Math.Round(Convert.ToDouble(w.Latitude!.Value), 2),
+                Lng = Math.Round(Convert.ToDouble(w.Longitude!.Value), 2)
             }).ToList();
 
             return View(client);
@@ -1144,8 +1123,11 @@ namespace FypWeb.Controllers
 
         // ── LOCATION (AJAX) ───────────────────────────────────────────────────────
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> UpdateLocation([FromBody] LatLng dto)
         {
+            if (dto == null || !AccountController.ValidCoordinates(dto.Latitude, dto.Longitude))
+                return Json(new { ok = false, message = "Enter valid latitude and longitude coordinates." });
             var client = await _context.Clients.FindAsync(ClientId);
             if (client == null) return Json(new { ok = false, message = "Client not found." });
             client.Latitude = dto.Latitude;

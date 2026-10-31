@@ -8,75 +8,86 @@
     <h4 class="mb-0 fw-bold">@Model.CourseName</h4>
 </div>
 
-<div class="card-soft mb-3"><div class="card-body">
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-        <span class="chip chip-blue"><i class="bi bi-calendar-range me-1"></i>@Model.StartDate — @Model.EndDate</span>
-        <span class="chip chip-blue"><i class="bi bi-clock me-1"></i>@Model.ClassTimings</span>
-        <span class="chip @(Model.IsPublished ? "chip-green" : "chip-gray")">@(Model.IsPublished ? "Published" : "Unpublished")</span>
-        <a asp-action="CourseForm" asp-route-id="@Model.CourseId" class="btn btn-sm btn-outline-primary ms-auto">
-            <i class="bi bi-pencil-square me-1"></i>Edit
-        </a>
-    </div>
-    @if (!string.IsNullOrWhiteSpace(Model.Description))
-    {
-        <p class="text-muted small mb-2">@Model.Description</p>
-    }
-    @if (!string.IsNullOrWhiteSpace(Model.Syllabus))
-    {
-        <div class="small">
-            <div class="fw-bold mb-1">Syllabus</div>
-            <div class="text-muted" style="white-space:pre-line;">@Model.Syllabus</div>
+<div class="card-soft mb-3">
+    <div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <span class="chip chip-blue"><i class="bi bi-calendar-range me-1"></i>@Model.StartDate — @Model.EndDate</span>
+            <span class="chip chip-blue"><i class="bi bi-clock me-1"></i>@Model.ClassTimings</span>
+            <span class="chip @(Model.IsPublished ? "chip-green" : "chip-gray")">@(Model.IsPublished ? "Published" : "Unpublished")</span>
+            @if (Model.IsDeleted)
+            {
+                <span class="chip chip-gray">Archived · read only</span>
+            }
+            @if (!Model.IsDeleted)
+            {
+                <a asp-action="CourseForm" asp-route-id="@Model.CourseId" class="btn btn-sm btn-outline-primary ms-auto">
+                    <i class="bi bi-pencil-square me-1"></i>Edit
+                </a>
+            }
         </div>
-    }
-</div></div>
-
-<div class="card-soft"><div class="card-body">
-    <h6 class="fw-bold"><i class="bi bi-people me-1 text-brand"></i>Enrolled Workers (@Model.Enrollments.Count)</h6>
-    @if (!Model.Enrollments.Any())
-    {
-        <p class="text-muted mb-0">No workers have enrolled yet.</p>
-    }
-    else
-    {
-        foreach (var e in Model.Enrollments)
+        @if (!string.IsNullOrWhiteSpace(Model.Description))
         {
-            var pic = FypWeb.Helpers.ViewHelpers.Pic(e.WorkerPicture);
-            <div class="d-flex align-items-center gap-3 py-2 border-bottom">
-                @if (pic != null)
-                {
-                    <img src="@pic" class="wc-avatar" style="width:42px;height:42px;" alt="@e.WorkerName"
-                         onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
-                    <div class="wc-avatar-fallback" style="display:none;width:42px;height:42px;">@FypWeb.Helpers.ViewHelpers.Initial(e.WorkerName)</div>
-                }
-                else
-                {
-                    <div class="wc-avatar-fallback" style="width:42px;height:42px;">@FypWeb.Helpers.ViewHelpers.Initial(e.WorkerName)</div>
-                }
-                <div class="flex-grow-1">
-                    <div class="fw-semibold">@e.WorkerName</div>
-                    <div class="small text-muted">Enrolled @e.EnrolledAt</div>
-                </div>
-                @if (e.CertificateId.HasValue)
-                {
-                    <span class="chip chip-green" title="Certificate @e.CertificateCode">
-                        <i class="bi bi-award me-1"></i>@e.Status · @e.CertificateCode
-                    </span>
-                }
-                else
-                {
-                    <span class="chip chip-blue">@e.Status</span>
-                    @if (e.Status == "Enrolled")
-                    {
-                        <form asp-action="CompleteEnrollment" method="post" class="m-0">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="enrollmentId" value="@e.EnrollmentId" />
-                            <button type="submit" class="btn btn-sm btn-success" title="Mark complete and issue certificate">
-                                <i class="bi bi-check"></i>
-                            </button>
-                        </form>
-                    }
-                }
+            <p class="text-muted small mb-2">@Model.Description</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.Syllabus))
+        {
+            <div class="small">
+                <div class="fw-bold mb-1">Syllabus</div>
+                <div class="text-muted" style="white-space:pre-line;">@Model.Syllabus</div>
             </div>
         }
-    }
-</div></div>
+    </div>
+</div>
+
+<div class="card-soft">
+    <div class="card-body">
+        <h6 class="fw-bold"><i class="bi bi-people me-1 text-brand"></i>Enrolled Workers (@Model.Enrollments.Count)</h6>
+        @if (!Model.Enrollments.Any())
+        {
+            <p class="text-muted mb-0">No workers have enrolled yet.</p>
+        }
+        else
+        {
+            foreach (var e in Model.Enrollments)
+            {
+                var pic = FypWeb.Helpers.ViewHelpers.Pic(e.WorkerPicture);
+                <div class="d-flex align-items-center gap-3 py-2 border-bottom">
+                    @if (pic != null)
+                    {
+                        <img src="@pic" class="wc-avatar" style="width:42px;height:42px;" alt="@e.WorkerName"
+                             onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                        <div class="wc-avatar-fallback" style="display:none;width:42px;height:42px;">@FypWeb.Helpers.ViewHelpers.Initial(e.WorkerName)</div>
+                    }
+                    else
+                    {
+                        <div class="wc-avatar-fallback" style="width:42px;height:42px;">@FypWeb.Helpers.ViewHelpers.Initial(e.WorkerName)</div>
+                    }
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold">@e.WorkerName</div>
+                        <div class="small text-muted">Enrolled @e.EnrolledAt</div>
+                    </div>
+                    @if (e.CertificateId.HasValue)
+                    {
+                        <span class="chip chip-green" title="Certificate @e.CertificateCode">
+                            <i class="bi bi-award me-1"></i>@e.Status · @e.CertificateCode
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="chip chip-blue">@e.Status</span>
+                        @if (!Model.IsDeleted && e.Status == "Enrolled")
+                        {
+                            <form asp-action="CompleteEnrollment" method="post" class="m-0">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="enrollmentId" value="@e.EnrollmentId" />
+                                <button type="submit" class="btn btn-sm btn-success" title="Mark complete and issue certificate">
+                                    <i class="bi bi-check"></i>
+                                </button>
+                            </form>
+                        }
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>

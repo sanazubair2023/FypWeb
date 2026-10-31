@@ -26,16 +26,21 @@
                         <div class="fw-bold">@Model.WorkerName</div>
                         <div class="text-muted small">Resignation submitted @Model.SubmittedDate</div>
                     </div>
-                    <span class="chip @(Model.IsConfirmed ? "chip-green" : "chip-amber")">@(Model.IsConfirmed ? "Confirmed" : "Pending")</span>
+                    <span class="chip @(Model.IsConfirmed ? "chip-green" : "chip-amber")">@(Model.IsConfirmed ? "Accepted" : "Notice pending")</span>
                 </div>
                 <hr />
                 <dl class="row small mb-0">
                     <dt class="col-sm-4">Reason</dt>
                     <dd class="col-sm-8">@Model.Reason</dd>
-                    <dt class="col-sm-4">Last working date</dt>
+                    <dt class="col-sm-4">Proposed last day</dt>
                     <dd class="col-sm-8">@Model.LastWorkingDate</dd>
                     <dt class="col-sm-4">Status</dt>
                     <dd class="col-sm-8">@Model.Status</dd>
+                    @if (Model.AcceptedAt != null)
+                    {
+                        <dt class="col-sm-4">Accepted</dt>
+                        <dd class="col-sm-8">@Model.AcceptedAt (@Model.AcceptanceMode)</dd>
+                    }
                 </dl>
             </div>
         </div>
@@ -58,33 +63,30 @@
             }
             else
             {
-                <div class="card-soft"><div class="card-body text-muted small">No review was submitted with the confirmation.</div></div>
+                <div class="card-soft"><div class="card-body text-muted small">The closing review has not been submitted yet. Complete the review form on this page.</div></div>
             }
         }
     </div>
 
-    @* ── Confirm + criteria review input ── *@
+    @* ── Acceptance and/or criteria review input ── *@
     <div class="col-lg-5">
-        @if (!Model.IsConfirmed)
+        @if (Model.ClientReview == null)
         {
             <div class="card-soft">
                 <div class="card-body">
-                    <h6 class="fw-bold"><i class="bi bi-clipboard-check me-1 text-brand"></i>Confirm resignation &amp; leave a review</h6>
-                    <p class="text-muted small">Confirming ends the contract. Rate every criterion for @Model.WorkerName, then add your remarks.</p>
-
+                    <h6 class="fw-bold"><i class="bi bi-clipboard-check me-1 text-brand"></i>@(Model.IsConfirmed ? "Complete your closing review" : "Accept resignation & leave a review")</h6>
+                    <p class="text-muted small">@(Model.IsConfirmed ? "The resignation is already accepted. Rate every criterion and save your remarks; do not confirm it again." : "Accepting ends the contract immediately. Otherwise it is accepted automatically at the seven-day deadline.")</p>
                     @if (!Model.CriteriaGroups.Any())
                     {
-                        <div class="alert alert-warning py-2 small">
-                            <i class="bi bi-info-circle me-1"></i>No review criteria configured — run <code>DbScripts/DetailReviews.sql</code> first.
-                        </div>
+                        <div class="alert alert-warning py-2 small"><i class="bi bi-info-circle me-1"></i>No review criteria are configured. Apply <code>Database/FypWeb_Parity_Upgrade.sql</code> before closing this review.</div>
                     }
                     else
                     {
                         <form asp-action="ConfirmResignation" method="post">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="interviewId" value="@Model.InterviewId" />
-
-                            <div class="fw-semibold small mb-2">Rate the following <span class="text-danger">*</span></div>
+                            <input type="hidden" name="resignationId" value="@Model.ResignationId" />
+                            <div class="fw-semibold small mb-2">Rate every criterion <span class="text-danger">*</span></div>
                             @foreach (var g in Model.CriteriaGroups)
                             {
                                 <div class="crit-group-title">@g.GroupName</div>
@@ -94,25 +96,20 @@
                                         <input type="hidden" name="criteriaScores[@idx].CriteriaId" value="@c.CriteriaId" />
                                         <span class="crit-name">@c.Name</span>
                                         <span class="crit-stars" data-idx="@idx">
-                                            @for (int s = 1; s <= 5; s++)
+                                            @for (int score = 1; score <= 5; score++)
                                             {
-                                                <input type="radio" class="d-none" name="criteriaScores[@idx].Score" value="@s" id="rs_@(idx)_@(s)" required="@(s == 1)" />
-                                                <label for="rs_@(idx)_@(s)" class="crit-star" title="@s star@((s > 1) ? "s" : "")"><i class="bi bi-star"></i></label>
+                                                <input type="radio" class="d-none" name="criteriaScores[@idx].Score" value="@score" id="rs_@(idx)_@(score)" required="@(score == 1)" />
+                                                <label for="rs_@(idx)_@(score)" class="crit-star" title="@score star@(score > 1 ? "s" : "")"><i class="bi bi-star"></i></label>
                                             }
                                         </span>
                                     </div>
                                     idx++;
                                 }
                             }
-
-                            <div class="mt-3">
-                                <label class="form-label fw-semibold">Remarks <span class="text-danger">*</span></label>
-                                <textarea name="comment" class="form-control" rows="3" placeholder="Your remarks about working with @Model.WorkerName" required></textarea>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary w-100 mt-3"
-                                    onclick="return confirm('Confirm this resignation and submit your review?');">
-                                <i class="bi bi-check-lg me-1"></i>Confirm Resignation
+                            <label class="form-label fw-semibold mt-3">Remarks <span class="text-danger">*</span></label>
+                            <textarea name="comment" class="form-control" rows="3" maxlength="4000" placeholder="Your remarks about working with @Model.WorkerName" required></textarea>
+                            <button type="submit" class="btn btn-primary w-100 mt-3" onclick="return confirm('@(Model.IsConfirmed ? "Save this closing review?" : "Accept this resignation and save your review?")');">
+                                <i class="bi bi-check-lg me-1"></i>@(Model.IsConfirmed ? "Save Closing Review" : "Accept Resignation")
                             </button>
                         </form>
                     }
@@ -124,8 +121,8 @@
             <div class="card-soft">
                 <div class="card-body text-center py-4">
                     <i class="bi bi-check-circle text-success" style="font-size:2rem;"></i>
-                    <div class="fw-bold mt-2">Resignation confirmed</div>
-                    <div class="text-muted small">This contract has ended.</div>
+                    <div class="fw-bold mt-2">Resignation accepted and reviewed</div>
+                    <div class="text-muted small">This contract and both closing actions are complete.</div>
                 </div>
             </div>
         }

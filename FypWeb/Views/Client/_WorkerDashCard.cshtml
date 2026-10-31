@@ -1,7 +1,7 @@
 ﻿@model InterviewRequestVM
 @{
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.OtherPartyPicture);
-    var isPast = Model.Status == "Resigned" || Model.Status == "Terminated";
+    var isPast = Model.Status == "Resigned" || Model.Status == "Terminated" || Model.Status == "Completed";
     var caption = isPast ? "Contract closed" : "Working with you";
     var pill = Model.Status switch
     {
@@ -34,6 +34,10 @@
 
         <div class="wdc-chiprow">
             <span class="chip chip-blue"><i class="bi bi-briefcase me-1"></i>@Model.JobType</span>
+            @if (Model.IsExclusive)
+            {
+                <span class="chip chip-amber"><i class="bi bi-lock me-1"></i>Exclusive</span>
+            }
             @if (Model.JobType == "Part-Time" && !string.IsNullOrEmpty(Model.SlotStart))
             {
                 <span class="chip chip-gray"><i class="bi bi-clock me-1"></i>@Model.SlotStart&nbsp;–&nbsp;@Model.SlotEnd</span>
@@ -45,6 +49,10 @@
             <span class="text-truncate">@Model.Location</span>
         </div>
 
+        @if (Model.HiringDate != null)
+        {
+            <div class="small text-muted mb-2"><i class="bi bi-calendar-check me-1"></i>Hired @Model.HiringDate</div>
+        }
         <div class="wdc-divider"></div>
 
         <div class="wdc-foot">
@@ -54,6 +62,10 @@
                 @if (Model.Status == "On Work")
                 {
                     <a asp-action="Terminate" asp-route-interviewId="@Model.InterviewId" class="btn btn-outline-danger btn-sm">Terminate</a>
+                }
+                @if (Model.ResignationId.HasValue && (Model.Status == "Pending Resignation" || Model.Status == "Resigned"))
+                {
+                    <a asp-action="ResignationDetail" asp-route-id="@Model.ResignationId" class="btn btn-outline-primary btn-sm">Resignation</a>
                 }
             </div>
         </div>

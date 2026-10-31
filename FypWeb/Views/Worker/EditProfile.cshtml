@@ -108,7 +108,7 @@
                         @foreach (var h in habits)
                         {
                             <label class="chip chip-blue" style="cursor:pointer;">
-                                <input type="checkbox" name="HabitIds" value="@h.HabitId" class="form-check-input me-1"
+                                <input type="checkbox" name="HabitIds" value="@h.HabitId" class="form-check-input me-1 habit-choice" data-habit-group="@h.ExclusiveGroup"
                                 @(selectedHabits.Contains(h.HabitId) ? "checked" : "") />@h.Name
                             </label>
                         }
@@ -168,14 +168,14 @@
                 var summary = document.getElementById('skillsSummary');
                 if (!st) return; // keep server-rendered values
                 skillsField.value = JSON.stringify((st.skills || []).map(function (s) {
-                    return { CategoryId: s.CategoryId, SkillsId: s.SkillsId };
+                    return { CategoryId: s.CategoryId, SkillsId: s.SkillsId, IsPrimary: s.CategoryId === st.primary };
                 }));
                 expField.value = JSON.stringify(st.experiences || []);
                 var bits = [];
-                if (st.primaryName) bits.push('Primary: <strong>' + st.primaryName + '</strong>');
+                if (st.primaryName) bits.push('Primary: ' + st.primaryName);
                 bits.push((st.skills || []).length + ' skill(s)');
                 bits.push((st.experiences || []).length + ' experience(s)');
-                if (summary) summary.innerHTML = bits.join(' · ');
+                if (summary) summary.textContent = bits.join(' · ');
             }
 
             document.getElementById('btnAddSkills').addEventListener('click', function () {
@@ -186,8 +186,9 @@
                     st.skills = JSON.parse(document.getElementById('skillsJson').value || '[]');
                     st.experiences = JSON.parse(document.getElementById('experiencesJson').value || '[]');
                     if (st.skills.length) {
-                        st.primary = st.skills[0].CategoryId;
-                        st.primaryName = st.skills[0].CategoryName || '';
+                        var primarySkill = st.skills.find(function (skill) { return skill.IsPrimary; }) || st.skills[0];
+                        st.primary = primarySkill.CategoryId;
+                        st.primaryName = primarySkill.CategoryName || '';
                         st.secondary = [];
                         st.skills.forEach(function (s) {
                             if (s.CategoryId !== st.primary && st.secondary.indexOf(s.CategoryId) < 0) st.secondary.push(s.CategoryId);
@@ -217,8 +218,9 @@
                     var skills = JSON.parse(document.getElementById('skillsJson').value || '[]');
                     var exps = JSON.parse(document.getElementById('experiencesJson').value || '[]');
                     if (skills.length) {
-                        var primary = skills[0].CategoryName || '';
-                        summary.innerHTML = (primary ? 'Primary: <strong>' + primary + '</strong> · ' : '') +
+                        var primarySkill = skills.find(function (skill) { return skill.IsPrimary; }) || skills[0];
+                        var primary = primarySkill.CategoryName || '';
+                        summary.textContent = (primary ? 'Primary: ' + primary + ' · ' : '') +
                             skills.length + ' skill(s) · ' + exps.length + ' experience(s)';
                     }
                 } catch (e) { }

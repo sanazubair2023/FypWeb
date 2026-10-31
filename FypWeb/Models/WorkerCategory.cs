@@ -5,5 +5,7 @@ namespace Fyp_Backend.Models
         public int WorkerId { get; set; }
         public int CategoryId { get; set; }
         public int SkillsId { get; set; }
+
+        public bool IsPrimary { get; set; }
     }
 }

@@ -29,6 +29,9 @@ public partial class Interview
 
     public bool? IsResidenceProvided { get; set; }
 
+    // Exclusive commitment applies only to Full-Time contracts.
+    public bool IsExclusive { get; set; }
+
     public virtual ICollection<Resignation> Resignations { get; set; } = new List<Resignation>();
 
     public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();

@@ -15,5 +15,10 @@ public partial class Resignation
 
     public DateTime? SubmittedDate { get; set; }
 
+    // NULL deadlines identify legacy notices, which must never auto-accept.
+    public DateTime? NoticeEndsAtUtc { get; set; }
+    public DateTime? AcceptedAtUtc { get; set; }
+    public string? AcceptanceMode { get; set; }
+
     public virtual Interview? Interview { get; set; }
 }

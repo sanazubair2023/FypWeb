@@ -1,0 +1,92 @@
+@model WorkerResignationReviewVM
+@{
+    ViewData["Title"] = "Resignation & Review";
+}
+
+<div class="d-flex gap-2 mb-3">
+    <a asp-action="Notifications" class="btn btn-outline-secondary btn-sm"><i class="bi bi-bell me-1"></i>Notifications</a>
+    <a asp-action="Dashboard" class="btn btn-outline-secondary btn-sm"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card-soft mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                        <h5 class="fw-bold">Resignation from @Model.ClientName</h5>
+                        <div class="text-muted small">Submitted @Model.SubmittedDate</div>
+                    </div>
+                    <span class="chip @(Model.IsAccepted ? "chip-green" : "chip-amber")">@(Model.IsAccepted ? "Accepted" : "Seven-day notice")</span>
+                </div>
+                <hr />
+                <dl class="row small mb-0">
+                    <dt class="col-sm-4">Reason</dt>
+                    <dd class="col-sm-8">@Model.Reason</dd>
+                    <dt class="col-sm-4">Proposed last day</dt>
+                    <dd class="col-sm-8">@Model.LastWorkingDate</dd>
+                    @if (Model.AcceptedAtUtc.HasValue)
+                    {
+                        <dt class="col-sm-4">Accepted</dt>
+                        <dd class="col-sm-8"><time class="utc-time" datetime="@Model.AcceptedAtUtc.Value.ToString("O")">@Model.AcceptedAtUtc.Value.ToString("dd MMM yyyy HH:mm 'UTC'")</time> (@Model.AcceptanceMode)</dd>
+                    }
+                </dl>
+                @if (!Model.IsAccepted)
+                {
+                    <div class="alert alert-info small mt-3 mb-0"><i class="bi bi-clock-history me-1"></i>You can review the client after the client accepts this resignation or the seven-day notice expires.</div>
+                }
+            </div>
+        </div>
+
+        @if (Model.ClientReview != null)
+        {
+            <h6 class="fw-bold">Client’s review of you</h6>
+            <partial name="_ReviewCard" model="Model.ClientReview" />
+        }
+        @if (Model.WorkerReview != null)
+        {
+            <h6 class="fw-bold mt-3">Your review of @Model.ClientName</h6>
+            <partial name="_ReviewCard" model="Model.WorkerReview" />
+            <div class="small text-success"><i class="bi bi-lock me-1"></i>Your review is saved and cannot be submitted twice.</div>
+        }
+    </div>
+    <div class="col-lg-5">
+        @if (Model.CanReview)
+        {
+            <div class="card-soft">
+                <div class="card-body">
+                    <h6 class="fw-bold"><i class="bi bi-star me-1 text-brand"></i>Review your client</h6>
+                    <p class="text-muted small">Your resignation is accepted. Share a whole-number rating and optional comment about @Model.ClientName.</p>
+                    <form asp-action="ResignationReview" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="id" value="@Model.ResignationId" />
+                        <label for="rating" class="form-label fw-semibold">Rating</label>
+                        <select id="rating" name="rating" class="form-select mb-3" required>
+                            <option value="">Choose 1–5 stars</option>
+                            @for (var score = 5; score >= 1; score--)
+                            {
+                                <option value="@score">@score star@(score == 1 ? "" : "s")</option>
+                            }
+                        </select>
+                        <label for="comment" class="form-label fw-semibold">Comment (optional)</label>
+                        <textarea id="comment" name="comment" class="form-control" rows="4" maxlength="4000" placeholder="How was your experience?"></textarea>
+                        <button type="submit" class="btn btn-primary w-100 mt-3"><i class="bi bi-send me-1"></i>Submit Review</button>
+                    </form>
+                </div>
+            </div>
+        }
+        else if (Model.IsAccepted && Model.WorkerReview == null)
+        {
+            <div class="alert alert-info">Your review form is being prepared. Refresh this page.</div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.querySelectorAll('.utc-time').forEach(function (el) {
+            var date = new Date(el.getAttribute('datetime'));
+            if (!isNaN(date.getTime())) el.textContent = date.toLocaleString();
+        });
+    </script>
+}

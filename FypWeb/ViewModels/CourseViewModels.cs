@@ -27,6 +27,7 @@ namespace FypWeb.ViewModels
         public string ClassTimings { get; set; } = "";
         public string? Description { get; set; }
         public bool IsPublished { get; set; }
+        public bool IsDeleted { get; set; }
         public int EnrollmentCount { get; set; }
         public int CompletedCount { get; set; }
     }
@@ -57,6 +58,7 @@ namespace FypWeb.ViewModels
         public string? Description { get; set; }
         public string? Syllabus { get; set; }
         public bool IsPublished { get; set; }
+        public bool IsDeleted { get; set; }
         public List<EnrollmentRowVM> Enrollments { get; set; } = new();
     }
 

@@ -3,6 +3,8 @@
     ViewData["Title"] = "Book Interview";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerPicture);
     string date = ViewBag.Date as string ?? DateTime.Today.ToString("yyyy-MM-dd");
+    bool allowNonExclusive = ViewBag.AllowNonExclusive == true;
+    bool hasActiveFullTime = ViewBag.HasActiveFullTime == true;
 }
 
 <a asp-action="WorkerDetail" asp-route-id="@Model.WorkerId" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to profile</a>
@@ -65,28 +67,32 @@
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Address</label>
-                        <textarea name="address" class="form-control" rows="2" placeholder="Where should the interview take place?">@Model.ClientAddress</textarea>
+                        <textarea name="address" class="form-control" rows="2" maxlength="1000" placeholder="Where should the interview take place?">@Model.ClientAddress</textarea>
                     </div>
 
                     @if (Model.IsPartTime)
                     {
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Available Time Slots</label>
-                            @if (!Model.HasSlots)
+                            <label class="form-label fw-semibold">Recurring Time Slots</label>
+                            <div class="form-text mb-2">A booked slot stays reserved across interview dates until its contract ends or enters resignation notice.</div>
+                            @if (!Model.Slots.Any())
                             {
-                                <div class="alert alert-secondary py-2 small mb-0">This worker has not published any time slots yet.</div>
+                                <div class="alert alert-secondary py-2 small mb-0">This worker has not published any active time slots.</div>
                             }
                             else
                             {
+                                if (!Model.HasSlots)
+                                {
+                                    <div class="alert alert-warning py-2 small">All published slots are currently reserved. You can review them below, but cannot send a part-time request yet.</div>
+                                }
                                 <input type="hidden" name="slotId" id="slotIdField" />
                                 <div class="row g-2">
-                                    @foreach (var s in Model.Slots)
+                                    @foreach (var slot in Model.Slots)
                                     {
                                         <div class="col-6 col-md-4">
-                                            <div class="slot-pill @(s.IsTaken ? "taken" : "")"
-                                                 data-id="@s.Id" data-taken="@s.IsTaken.ToString().ToLower()">
-                                                <i class="bi bi-clock me-1"></i>@s.StartTime - @s.EndTime
-                                                @if (s.IsTaken)
+                                            <div class="slot-pill @(slot.IsTaken ? "taken" : "")" data-id="@slot.Id" data-taken="@slot.IsTaken.ToString().ToLower()">
+                                                <i class="bi bi-clock me-1"></i>@slot.StartTime - @slot.EndTime
+                                                @if (slot.IsTaken)
                                                 {
                                                     <div class="small text-danger">Booked</div>
                                                 }
@@ -100,6 +106,15 @@
                     }
                     else
                     {
+                        if (hasActiveFullTime)
+                        {
+                            <div class="alert alert-warning small"><i class="bi bi-exclamation-triangle me-1"></i>This worker has an active full-time job. An exclusive request will be rejected; a non-exclusive request can be sent, but final hiring must wait until that job ends.</div>
+                        }
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="isExclusive" value="true" id="exclusiveSwitch" @(allowNonExclusive ? "" : "checked") />
+                            <label class="form-check-label fw-semibold" for="exclusiveSwitch">Request exclusive full-time engagement</label>
+                            <div class="form-text">Exclusive engagement locks the worker’s public availability when hiring is finalized.</div>
+                        </div>
                         <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" name="isResidenceProvided" value="true" id="resSwitch" />
                             <label class="form-check-label fw-semibold" for="resSwitch">Residence / accommodation provided</label>
@@ -127,6 +142,7 @@
                     // clock pick intact
                     var url = '@Url.Action("BookInterview", "Client")?workerId=@Model.WorkerId&date=' + this.value;
                     if (timeInput && timeInput.value) url += '&time=' + encodeURIComponent(timeInput.value);
+                    url += '&allowNonExclusive=' + @(allowNonExclusive ? "true" : "false");
                     window.location.href = url;
                 });
             }

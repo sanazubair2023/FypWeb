@@ -12,6 +12,20 @@ namespace FypWeb.Helpers
     {
         private static double ToRadians(double val) => (Math.PI / 180.0) * val;
 
+        /// <summary>
+        /// The existing schema stores a free-form address rather than a separate
+        /// city. Match the mobile display convention and use its last segment.
+        /// </summary>
+        public static string? CityFromAddress(string? address)
+        {
+            if (string.IsNullOrWhiteSpace(address)) return null;
+            var parts = address.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length == 0) return null;
+            var city = parts[^1].Trim();
+            if (city.Length is < 2 or > 100 || city.Equals("N/A", StringComparison.OrdinalIgnoreCase)) return null;
+            return city;
+        }
+
         public static double CalculateHaversineDistance(double lat1, double lon1, double lat2, double lon2)
         {
             const double R = 6371.0; // Earth radius in kilometers

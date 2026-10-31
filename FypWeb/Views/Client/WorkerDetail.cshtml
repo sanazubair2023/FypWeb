@@ -2,8 +2,8 @@
 @{
     ViewData["Title"] = Model.Name;
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
-    bool canHire = ViewBag.CanHire != null && (bool)ViewBag.CanHire;
-    string contractStatus = ViewBag.ContractStatus as string ?? "Terminated";
+    bool canHire = Model.CanHire;
+    string contractStatus = Model.ContractStatus;
 }
 
 <a asp-action="FindService" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to search</a>
@@ -46,6 +46,10 @@
                 {
                     <span class="chip chip-green"><i class="bi bi-circle-fill me-1" style="font-size:.5rem;"></i>Available</span>
                 }
+                else if (Model.IsExclusiveFullTime)
+                {
+                    <span class="chip chip-amber"><i class="bi bi-lock me-1"></i>Exclusive contract active</span>
+                }
                 else
                 {
                     <span class="chip chip-gray">Currently unavailable</span>
@@ -53,11 +57,10 @@
 
                 <hr />
                 <ul class="list-unstyled text-start small mb-0">
-                    <li class="mb-2"><i class="bi bi-telephone me-2 text-brand"></i>@(Model.Phone ?? "N/A")</li>
+                    <li class="mb-2"><i class="bi bi-telephone me-2 text-brand"></i>@(Model.CanViewContact ? Model.Phone : "Contact available during your active contract")</li>
                     <li class="mb-2"><i class="bi bi-geo-alt me-2 text-brand"></i>@(Model.Address ?? "N/A")</li>
                     <li class="mb-2"><i class="bi bi-cash-coin me-2 text-brand"></i>@Model.Salary</li>
                     <li class="mb-2"><i class="bi bi-gender-ambiguous me-2 text-brand"></i>@(Model.Gender ?? "N/A") @(Model.Age.HasValue ? $"· {Model.Age} yrs" : "")</li>
-                    <li><i class="bi bi-person-badge me-2 text-brand"></i>CNIC: @(Model.Cnic ?? "N/A")</li>
                 </ul>
 
                 <div class="mt-4">
@@ -80,17 +83,23 @@
                         </div>
                     }
 
-                    @if (!canHire)
+                    @if (Model.HasActiveInterview)
                     {
-                        <button class="btn btn-secondary w-100" disabled><i class="bi bi-slash-circle me-1"></i>Cannot Hire (@contractStatus)</button>
+                        <button class="btn btn-secondary w-100" disabled><i class="bi bi-hourglass-split me-1"></i>Request or contract already active</button>
                     }
-                    else if (Model.HasActiveInterview)
+                    else if (!canHire)
                     {
-                        <button class="btn btn-secondary w-100" disabled><i class="bi bi-hourglass-split me-1"></i>Request in progress</button>
+                        <button class="btn btn-secondary w-100" disabled><i class="bi bi-slash-circle me-1"></i>Cannot hire</button>
+                        <div class="small text-muted mt-2">@contractStatus</div>
                     }
                     else
                     {
-                        <a asp-action="BookInterview" asp-route-workerId="@Model.Id" class="btn btn-primary w-100">
+                        if (!string.IsNullOrWhiteSpace(contractStatus))
+                        {
+
+                            <div class="small text-muted mb-2">@contractStatus</div>
+                        }
+                        <a asp-action="BookInterview" asp-route-workerId="@Model.Id" asp-route-allowNonExclusive="@Model.IsExclusiveFullTime" class="btn btn-primary w-100">
                             <i class="bi bi-calendar-plus me-1"></i>Book Interview
                         </a>
                     }
@@ -212,16 +221,20 @@
             <div class="card-soft mb-3">
                 <div class="card-body">
                     <h6 class="fw-bold"><i class="bi bi-clock me-1 text-brand"></i>Part-Time Available Slots</h6>
-                    <p class="small text-muted mb-3">This worker is within your radius (@Model.DistanceKm km away). Pick a slot when you book.</p>
+                    <p class="small text-muted mb-3">This worker is within your radius (@Model.DistanceKm km away). Booked recurring slots remain reserved across dates.</p>
                     @if (Model.Slots.Any())
                     {
                         <div class="row g-2">
                             @foreach (var s in Model.Slots)
                             {
                                 <div class="col-6 col-md-4">
-                                    <div class="border rounded p-2 d-flex align-items-center gap-2">
+                                    <div class="border rounded p-2 d-flex align-items-center gap-2 @(s.IsTaken ? "bg-light text-muted" : "")">
                                         <i class="bi bi-clock-history text-brand"></i>
                                         <span class="fw-semibold">@s.StartTime - @s.EndTime</span>
+                                        @if (s.IsTaken)
+                                        {
+                                            <span class="small text-danger ms-auto">Booked</span>
+                                        }
                                     </div>
                                 </div>
                             }

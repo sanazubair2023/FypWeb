@@ -33,7 +33,7 @@ namespace FypWeb.Helpers
 
             var resignations = await context.Resignations
                 .Where(r => r.InterviewId != null && interviewIds.Contains(r.InterviewId.Value))
-                .Select(r => new { InterviewId = r.InterviewId!.Value, r.SubmittedDate, r.LastWorkingDate })
+                .Select(r => new { InterviewId = r.InterviewId!.Value, r.SubmittedDate, r.LastWorkingDate, r.AcceptedAtUtc })
                 .ToListAsync();
 
             var terminations = await context.Terminations
@@ -64,9 +64,9 @@ namespace FypWeb.Helpers
                         .FirstOrDefault();
                     if (resignation != null)
                     {
-                        to = resignation.LastWorkingDate != default
+                        to = resignation.AcceptedAtUtc ?? (resignation.LastWorkingDate != default
                             ? resignation.LastWorkingDate.ToDateTime(TimeOnly.MinValue)
-                            : resignation.SubmittedDate;
+                            : resignation.SubmittedDate);
                     }
                 }
 

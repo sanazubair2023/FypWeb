@@ -7,6 +7,7 @@ namespace FypWeb.ViewModels
         public string Role { get; set; } = "Client"; // Client | Worker | Company | Police
         public string EmailOrCnic { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public bool RememberMe { get; set; }
     }
 
     // Work history row — mirrors the NEW backend contract: experiencesJson now
@@ -28,6 +29,7 @@ namespace FypWeb.ViewModels
         public int SkillsId { get; set; }
         public string? CategoryName { get; set; }
         public string? SkillName { get; set; }
+        public bool IsPrimary { get; set; }
     }
 
     /// <summary>

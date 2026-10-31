@@ -20,15 +20,21 @@ function getAntiForgeryToken() {
 
 // ── JSON POST helper (adds antiforgery header) ───────────────────────────────
 async function postJson(url, body) {
-    var res = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'RequestVerificationToken': getAntiForgeryToken()
-        },
-        body: JSON.stringify(body)
-    });
-    return res.json();
+    try {
+        var res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'RequestVerificationToken': getAntiForgeryToken()
+            },
+            body: JSON.stringify(body)
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) return { ok: false, message: data.message || 'The request could not be completed (' + res.status + ').' };
+        return data;
+    } catch (e) {
+        return { ok: false, message: 'Network error. Check your connection and try again.' };
+    }
 }
 
 // ── Geolocation → returns {latitude, longitude} ──────────────────────────────
@@ -94,4 +100,100 @@ function renderStars(value) {
         else html += '<i class="bi bi-star"></i>';
     }
     return html;
+}
+
+
+// Worker notification unread badge. Only numeric JSON is inserted into the DOM.
+(function () {
+    var badge = document.getElementById('workerNotificationBadge');
+    if (!badge) return;
+    async function refresh() {
+        try {
+            var response = await fetch(badge.getAttribute('data-notification-url'), { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) return;
+            var data = await response.json();
+            var count = Number.isFinite(data.count) ? Math.max(0, data.count) : 0;
+            badge.textContent = count > 99 ? '99+' : String(count);
+            badge.classList.toggle('d-none', count === 0);
+            badge.setAttribute('aria-label', count + ' unread notifications');
+        } catch (e) { /* retain the last known count during a transient failure */ }
+    }
+    refresh();
+    setInterval(refresh, 60000);
+})();
+
+
+// Habit metadata can define mutually exclusive groups (for example, one
+// smoking preference). The server validates the same rule; this is only UX.
+(function () {
+    document.querySelectorAll('.habit-choice[data-habit-group]').forEach(function (input) {
+        input.addEventListener('change', function () {
+            if (!this.checked) return;
+            var group = this.getAttribute('data-habit-group');
+            if (!group) return;
+            var form = this.closest('form') || document;
+            form.querySelectorAll('.habit-choice[data-habit-group]').forEach(function (other) {
+                if (other !== input && other.getAttribute('data-habit-group') === group) other.checked = false;
+            });
+        });
+    });
+})();
+
+// Progressive-enhancement Photon place search (the reviewed app uses the same
+// public geocoder). Results are rendered as text, never as HTML. Map/pin and
+// native geolocation remain usable when the service cannot be reached.
+function initPhotonPlaceSearch(options) {
+    var input = document.getElementById(options.inputId || 'placeSearch');
+    var results = document.getElementById(options.resultsId || 'placeResults');
+    if (!input || !results) return;
+    var timer = null, activeRequest = null;
+    function clearResults() { results.replaceChildren(); }
+    function message(text, isError) {
+        clearResults();
+        var div = document.createElement('div');
+        div.className = 'small ' + (isError ? 'text-danger' : 'text-muted') + ' mt-1';
+        div.textContent = text; results.appendChild(div);
+    }
+    function choose(feature) {
+        var coordinates = feature.geometry && feature.geometry.coordinates;
+        if (!coordinates || coordinates.length < 2) return;
+        var p = feature.properties || {};
+        var label = [p.name, p.street, p.city, p.state, p.country].filter(function (part, index, parts) {
+            return part && parts.indexOf(part) === index;
+        }).join(', ');
+        input.value = label || p.name || 'Selected place';
+        clearResults();
+        options.onPick(Number(coordinates[1]), Number(coordinates[0]), input.value);
+    }
+    input.addEventListener('input', function () {
+        clearTimeout(timer);
+        var query = input.value.trim();
+        if (activeRequest) activeRequest.abort();
+        if (query.length < 3) { clearResults(); return; }
+        timer = setTimeout(async function () {
+            activeRequest = new AbortController();
+            message('Searching places…', false);
+            try {
+                var response = await fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(query) + '&limit=5', {
+                    signal: activeRequest.signal, headers: { 'Accept': 'application/json' }
+                });
+                if (!response.ok) throw new Error('Geocoder unavailable');
+                var data = await response.json();
+                clearResults();
+                if (!data.features || !data.features.length) { message('No matching places found.', false); return; }
+                data.features.forEach(function (feature) {
+                    var p = feature.properties || {};
+                    var button = document.createElement('button');
+                    button.type = 'button'; button.className = 'list-group-item list-group-item-action';
+                    button.textContent = [p.name, p.street, p.city, p.state, p.country].filter(function (part, index, parts) {
+                        return part && parts.indexOf(part) === index;
+                    }).join(', ') || 'Unnamed place';
+                    button.addEventListener('click', function () { choose(feature); });
+                    results.appendChild(button);
+                });
+            } catch (e) {
+                if (e.name !== 'AbortError') message('Place search is unavailable. You can still drop a pin on the map.', true);
+            }
+        }, 350);
+    });
 }

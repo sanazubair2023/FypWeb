@@ -7,7 +7,10 @@
 @{
     var accent = ViewData["Accent"] as string ?? "#3B82F6";
     var pic = ViewData["Picture"] as string;
-    var nameLink = ViewData["NameLink"] as string;   // RN onNamePress — only set where the name should navigate
+    var nameLink = ViewData["NameLink"] as string;
+    // RN onNamePress: a client reviewer's name opens the read-only client profile.
+    if (string.IsNullOrEmpty(nameLink) && Model.ReviewerClientId is int clientId && clientId > 0)
+        nameLink = Url.Action("ClientProfile", "Home", new { id = clientId });
     var endKey = (Model.EndType ?? "").ToLowerInvariant();
     string? badgeLabel = endKey == "terminated" ? "Terminated" : endKey == "resigned" ? "Resigned" : null;
     string badgeBg = badgeLabel == "Terminated" ? "#FEE2E2" : "#EDE9FE";

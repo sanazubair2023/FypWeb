@@ -99,29 +99,34 @@ namespace FypWeb.Controllers
             return View(vm);
         }
 
+        private static string CnicDigits(string? value) => new((value ?? "").Where(char.IsDigit).ToArray());
+
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> IssueCertificate(int workerId, string characterStatus, string? certificateNo,
             string? remarks, string? verifiedCnic, bool cnicVerified)
         {
             if (workerId <= 0) { TempData["Error"] = "A valid Worker ID is required."; return RedirectToAction("Portal"); }
-            if (string.IsNullOrWhiteSpace(characterStatus))
-            { TempData["Error"] = "Character status is required."; return RedirectToAction("WorkerDetail", new { id = workerId }); }
+            if (string.IsNullOrWhiteSpace(characterStatus) || characterStatus.Trim().Length > 50 || certificateNo?.Trim().Length > 50 || remarks?.Length > 4000)
+            { TempData["Error"] = "Character status and certificate number are limited to 50 characters; remarks to 4,000."; return RedirectToAction("WorkerDetail", new { id = workerId }); }
             if (!cnicVerified)
             { TempData["Error"] = "Please confirm you have verified the worker's CNIC."; return RedirectToAction("WorkerDetail", new { id = workerId }); }
 
             var worker = await _context.Workers.FindAsync(workerId);
             if (worker == null) { TempData["Error"] = "Worker does not exist."; return RedirectToAction("Portal"); }
 
+            if (CnicDigits(verifiedCnic).Length != 13 || CnicDigits(verifiedCnic) != CnicDigits(worker.Cnic))
+            { TempData["Error"] = "The entered CNIC does not match this worker's registered CNIC."; return RedirectToAction("WorkerDetail", new { id = workerId }); }
             var officer = await _context.PoliceOfficers.FindAsync(PoliceId);
             if (officer == null) { TempData["Error"] = "Your police session is invalid. Please log in again."; return RedirectToAction("Portal"); }
 
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             var now = DateTime.Now;
             var expiry = now.AddYears(CERT_VALIDITY_YEARS);
             string certNo = string.IsNullOrWhiteSpace(certificateNo)
                 ? $"CC-{worker.WorkerId}-{now:yyyyMMdd}" : certificateNo.Trim();
 
-            var cert = await _context.PoliceRecords.FirstOrDefaultAsync(pr => pr.WorkerID == workerId);
+            var cert = await _context.PoliceRecords.Where(pr => pr.WorkerID == workerId).OrderByDescending(pr => pr.RecordID).FirstOrDefaultAsync();
             bool isRenewal = cert != null;
             cert ??= new PoliceRecords { WorkerID = workerId };
 
@@ -129,7 +134,7 @@ namespace FypWeb.Controllers
             cert.CertificateNo = certNo;
             cert.CharacterStatus = characterStatus.Trim();
             cert.Remarks = remarks?.Trim() ?? string.Empty;
-            cert.VerifiedCnic = string.IsNullOrWhiteSpace(verifiedCnic) ? worker.Cnic : verifiedCnic.Trim();
+            cert.VerifiedCnic = worker.Cnic;
             cert.CnicVerified = cnicVerified;
             cert.IssuingStation = officer.StationName;
             cert.IssuingBadge = officer.BadgeID;
@@ -139,6 +144,7 @@ namespace FypWeb.Controllers
 
             if (!isRenewal) _context.PoliceRecords.Add(cert);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             TempData["Success"] = isRenewal
                 ? $"Character certificate renewed successfully. Valid until {expiry:dd-MM-yyyy}."

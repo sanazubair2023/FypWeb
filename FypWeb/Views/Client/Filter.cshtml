@@ -205,7 +205,8 @@
                     var s = document.createElement('button');
                     s.type = 'button';
                     s.className = 'tag-chip';
-                    s.innerHTML = label + ' <i class="bi bi-x-lg"></i>';
+                    s.appendChild(document.createTextNode(label + ' '));
+                    var closeIcon = document.createElement('i'); closeIcon.className = 'bi bi-x-lg'; s.appendChild(closeIcon);
                     s.addEventListener('click', onRemove);
                     row.appendChild(s);
                 }
@@ -233,7 +234,8 @@
                     var btn = catButtons.find(function (x) { return x.getAttribute('data-id') === id; });
                     var box = document.createElement('div');
                     box.className = 'subcat-box';
-                    box.innerHTML = '<div class="small fw-bold mb-2">' + (btn ? btn.getAttribute('data-name') : '') + '</div>';
+                    var heading = document.createElement('div'); heading.className = 'small fw-bold mb-2';
+                    heading.textContent = btn ? btn.getAttribute('data-name') : ''; box.appendChild(heading);
                     var chipRow = document.createElement('div');
                     chipRow.className = 'd-flex flex-wrap gap-2';
                     box.appendChild(chipRow);
@@ -244,7 +246,8 @@
                             var b = document.createElement('button');
                             b.type = 'button';
                             b.className = 'chip chip-select' + (on ? ' on' : '');
-                            b.innerHTML = (on ? '<i class="bi bi-check-circle me-1"></i>' : '<i class="bi bi-plus-circle me-1"></i>') + s.skillName;
+                            b.innerHTML = on ? '<i class="bi bi-check-circle me-1"></i>' : '<i class="bi bi-plus-circle me-1"></i>';
+                            b.appendChild(document.createTextNode(s.skillName));
                             b.addEventListener('click', function () { toggleSub(s.skillName); });
                             chipRow.appendChild(b);
                         });

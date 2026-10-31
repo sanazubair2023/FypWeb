@@ -17,16 +17,16 @@ namespace Fyp_Backend.Models
 
         [Required]
         [StringLength(150)]
-        public string CertificateTitle { get; set; }
+        public string CertificateTitle { get; set; } = string.Empty;
 
-        public string TrainingEvaluationNotes { get; set; }
+        public string TrainingEvaluationNotes { get; set; } = string.Empty;
 
         public DateTime IssuedDate { get; set; } = DateTime.Now;
 
         [ForeignKey("CompanyID")]
-        public virtual Company Company { get; set; }
+        public virtual Company Company { get; set; } = null!;
 
         [ForeignKey("WorkerID")]
-        public virtual Worker Worker { get; set; }
+        public virtual Worker Worker { get; set; } = null!;
     }
 }

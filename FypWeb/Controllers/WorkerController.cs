@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Fyp_Backend.Models;
 using FypWeb.Helpers;
+using FypWeb.Services;
 using FypWeb.ViewModels;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
@@ -16,10 +17,23 @@ namespace FypWeb.Controllers
     {
         private readonly Fyp1Context _context;
         private readonly ImageService _images;
-        public WorkerController(Fyp1Context context, ImageService images)
+        private readonly PasswordService _passwords;
+        private readonly ContractRules _rules;
+        private readonly ResignationWorkflowService _workflow;
+        private readonly WorkerNotificationService _notifications;
+        private readonly ILogger<WorkerController> _logger;
+
+        public WorkerController(Fyp1Context context, ImageService images, PasswordService passwords,
+            ContractRules rules, ResignationWorkflowService workflow, WorkerNotificationService notifications,
+            ILogger<WorkerController> logger)
         {
             _context = context;
             _images = images;
+            _passwords = passwords;
+            _rules = rules;
+            _workflow = workflow;
+            _notifications = notifications;
+            _logger = logger;
         }
 
         private int WorkerId => User.GetId();
@@ -46,13 +60,14 @@ namespace FypWeb.Controllers
                 from c in cg.DefaultIfEmpty()
                 join s in _context.Skills on wc.SkillsId equals s.SkillsId into sg
                 from s in sg.DefaultIfEmpty()
-                select new { CategoryId = wc.CategoryId, CategoryName = c != null ? c.CategoryName : "", SkillName = s != null ? s.SkillName : "" }
+                select new { CategoryId = wc.CategoryId, wc.IsPrimary, CategoryName = c != null ? c.CategoryName : "", SkillName = s != null ? s.SkillName : "" }
                 ).ToListAsync();
 
             string primaryRole = "General Worker";
             var primarySkills = new List<string>();
             var partTimeSkills = new List<PartTimeSkillGroupVM>();
-            int? primaryCatId = junctionRows.Select(r => (int?)r.CategoryId).FirstOrDefault();
+            int? primaryCatId = junctionRows.Where(r => r.IsPrimary).Select(r => (int?)r.CategoryId).FirstOrDefault()
+                ?? junctionRows.Select(r => (int?)r.CategoryId).FirstOrDefault();
             if (primaryCatId.HasValue)
             {
                 var primaryName = junctionRows.Where(r => r.CategoryId == primaryCatId.Value)
@@ -69,7 +84,7 @@ namespace FypWeb.Controllers
                     }).ToList();
             }
 
-            var slots = await _context.WorkerTimeSlots.Where(s => s.WorkerId == workerId)
+            var slots = await _context.WorkerTimeSlots.Where(s => s.WorkerId == workerId && s.IsActive)
                 .OrderBy(s => s.StartTime)
                 .Select(s => new SlotVM { Id = s.Id, StartTime = s.StartTime.ToString(@"hh\:mm"), EndTime = s.EndTime.ToString(@"hh\:mm") })
                 .ToListAsync();
@@ -106,6 +121,7 @@ namespace FypWeb.Controllers
             var reviews = reviewRows.Select(r => new ReviewVM
             {
                 ReviewerId = r.ClientId,
+                ReviewerClientId = r.ClientId,
                 Rating = r.Rating,
                 Comment = r.Comment,
                 ReviewerRole = "Client",
@@ -119,9 +135,9 @@ namespace FypWeb.Controllers
 
             // Overview counters (RN WorkerDashboardScreen notification cards).
             int pendingRequestCount = await _context.Interviews
-                .CountAsync(i => i.WorkerId == workerId && (i.WorkerDecision == null || i.WorkerDecision == "Pending"));
+                .CountAsync(i => i.WorkerId == workerId && i.Status == "Pending" && (i.WorkerDecision == null || i.WorkerDecision == "Pending"));
             int jobNotificationCount = await _context.Hiring
-                .CountAsync(h => h.InterviewId != null && h.Interview.WorkerId == workerId && h.WorkerDecision == "Pending");
+                .CountAsync(h => h.InterviewId != null && h.Interview != null && h.Interview.WorkerId == workerId && h.WorkerDecision == "Pending");
             int terminationCount = await _context.Interviews
                 .CountAsync(i => i.WorkerId == workerId && i.Status == "Terminated");
 
@@ -254,12 +270,12 @@ namespace FypWeb.Controllers
         }
 
         // ── INTERVIEW REQUESTS (pending) ──────────────────────────────────────────
-        public async Task<IActionResult> Requests()
+        public async Task<IActionResult> Requests(int? interviewId)
         {
             int workerId = WorkerId;
             var pending = await _context.Interviews
                 .Include(i => i.Client)
-                .Where(i => i.WorkerId == workerId && (i.WorkerDecision == null || i.WorkerDecision == "Pending"))
+                .Where(i => i.WorkerId == workerId && i.Status == "Pending" && (i.WorkerDecision == null || i.WorkerDecision == "Pending") && (!interviewId.HasValue || i.InterviewId == interviewId.Value))
                 .Select(i => new InterviewRequestVM
                 {
                     InterviewId = i.InterviewId,
@@ -270,7 +286,8 @@ namespace FypWeb.Controllers
                     Time = i.InterviewDate != null ? i.InterviewDate.Value.ToString("MMM dd, hh:mm tt") : "Not Set",
                     Status = i.Status ?? "",
                     JobType = i.JobType ?? "Full-Time",
-                    IsResidenceProvided = i.IsResidenceProvided
+                    IsResidenceProvided = i.IsResidenceProvided,
+                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time"
                 }).ToListAsync();
             return View(pending);
         }
@@ -280,7 +297,7 @@ namespace FypWeb.Controllers
             int workerId = WorkerId;
             var accepted = await _context.Interviews
                 .Include(i => i.Client)
-                .Where(i => i.WorkerId == workerId && i.WorkerDecision == "Accepted")
+                .Where(i => i.WorkerId == workerId && i.WorkerDecision == "Accepted" && i.Status == "Pending")
                 .Select(i => new InterviewRequestVM
                 {
                     InterviewId = i.InterviewId,
@@ -290,7 +307,8 @@ namespace FypWeb.Controllers
                     Location = i.Address ?? "N/A",
                     Time = i.InterviewDate != null ? i.InterviewDate.Value.ToString("MMM dd, hh:mm tt") : "Not Set",
                     Status = i.Status ?? "",
-                    JobType = i.JobType ?? "Full-Time"
+                    JobType = i.JobType ?? "Full-Time",
+                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time"
                 }).ToListAsync();
             return View(accepted);
         }
@@ -299,26 +317,27 @@ namespace FypWeb.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DecideInterview(int id, string decision)
         {
-            int workerId = WorkerId;
-            var interview = await _context.Interviews.FirstOrDefaultAsync(i => i.InterviewId == id && i.WorkerId == workerId);
-            if (interview == null) { TempData["Error"] = "Request not found."; return RedirectToAction("Requests"); }
-
+            if (decision is not ("Accepted" or "Rejected")) { TempData["Error"] = "Invalid interview decision."; return RedirectToAction("Requests"); }
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var interview = await _workflow.LockInterviewAsync(id);
+            if (interview == null || interview.WorkerId != WorkerId) { TempData["Error"] = "Request not found."; return RedirectToAction("Requests"); }
+            var canAccept = decision == "Accepted" && interview.Status == "Pending" && (interview.WorkerDecision == null || interview.WorkerDecision == "Pending");
+            var canReject = decision == "Rejected" && interview.Status == "Pending" && (interview.WorkerDecision == null || interview.WorkerDecision == "Pending" || interview.WorkerDecision == "Accepted");
+            if (!canAccept && !canReject) { TempData["Error"] = "This interview is no longer awaiting that decision."; return RedirectToAction("Requests"); }
             interview.WorkerDecision = decision;
-            if (decision == "Accepted") interview.Status = "Pending";
-            else if (decision == "Rejected") interview.Status = "Rejected";
-            await _context.SaveChangesAsync();
-
-            TempData["Success"] = $"Interview {decision.ToLower()}.";
+            if (decision == "Rejected") interview.Status = "Rejected";
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
+            TempData["Success"] = $"Interview {decision.ToLowerInvariant()}.";
             return RedirectToAction("Requests");
         }
 
         // ── JOB CONFIRMATIONS (offers) ────────────────────────────────────────────
-        public async Task<IActionResult> JobConfirmations()
+        public async Task<IActionResult> JobConfirmations(int? hiringId)
         {
             int workerId = WorkerId;
             var jobs = await _context.Hiring
                 .Include(h => h.Interview).ThenInclude(i => i!.Client)
-                .Where(h => h.Interview!.WorkerId == workerId)
+                .Where(h => h.Interview!.WorkerId == workerId && (!hiringId.HasValue || h.HiringId == hiringId.Value))
                 .Select(h => new InterviewRequestVM
                 {
                     InterviewId = h.InterviewId ?? 0,
@@ -328,6 +347,7 @@ namespace FypWeb.Controllers
                     OtherPartyPicture = h.Interview.Client != null ? h.Interview.Client.Picture : null,
                     Location = h.Address ?? "N/A",
                     JobType = h.Interview.JobType ?? "Full-Time",
+                    IsExclusive = h.Interview.IsExclusive && h.Interview.JobType == "Full-Time",
                     Status = h.Interview.Status ?? "",
                     HiringWorkerDecision = h.WorkerDecision ?? "Pending",
                     HiringDecision = h.HiringDecision ?? "Pending"
@@ -337,23 +357,21 @@ namespace FypWeb.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> RespondJobOffer(int interviewId, string decision)
+        public async Task<IActionResult> RespondJobOffer(int interviewId, string decision, int? hiringId)
         {
-            var hiring = await _context.Hiring.Include(h => h.Interview).FirstOrDefaultAsync(h => h.InterviewId == interviewId);
+            if (decision is not ("Accepted" or "Rejected")) { TempData["Error"] = "Invalid offer decision."; return RedirectToAction("JobConfirmations"); }
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var interview = await _workflow.LockInterviewAsync(interviewId);
+            if (interview == null || interview.WorkerId != WorkerId) { TempData["Error"] = "Job offer not found."; return RedirectToAction("JobConfirmations"); }
+            var hiring = await _context.Hiring.FirstOrDefaultAsync(h => h.InterviewId == interviewId &&
+                (!hiringId.HasValue || h.HiringId == hiringId.Value));
             if (hiring == null) { TempData["Error"] = "Job offer not found."; return RedirectToAction("JobConfirmations"); }
-
-            if (decision == "Accepted")
-            {
-                hiring.WorkerDecision = "Accepted";
-                TempData["Success"] = "Job offer accepted! Awaiting client confirmation.";
-            }
-            else
-            {
-                hiring.WorkerDecision = "Rejected";
-                if (hiring.Interview != null) hiring.Interview.Status = "JobRejected";
-                TempData["Success"] = "Job offer declined.";
-            }
-            await _context.SaveChangesAsync();
+            if (interview.Status != "Approved" || hiring.WorkerDecision != "Pending" || hiring.HiringDecision != "Pending")
+            { TempData["Error"] = "This offer has already been decided or is no longer active."; return RedirectToAction("JobConfirmations"); }
+            hiring.WorkerDecision = decision;
+            if (decision == "Rejected") interview.Status = "JobRejected";
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
+            TempData["Success"] = decision == "Accepted" ? "Job offer accepted! Awaiting client confirmation." : "Job offer declined.";
             return RedirectToAction("JobConfirmations");
         }
 
@@ -378,7 +396,9 @@ namespace FypWeb.Controllers
                 {
                     InterviewId = x.Interview.InterviewId,
                     ClientName = x.Interview.Client != null ? x.Interview.Client.Name : "Employer",
-                    Address = x.Interview.Client != null ? (x.Interview.Client.Address ?? "N/A") : "N/A"
+                    Address = x.Interview.Client != null ? (x.Interview.Client.Address ?? "N/A") : "N/A",
+                    JobType = x.Interview.JobType ?? "Full-Time",
+                    IsExclusive = x.Interview.IsExclusive && x.Interview.JobType == "Full-Time"
                 })
                 .FirstOrDefaultAsync();
 
@@ -387,52 +407,24 @@ namespace FypWeb.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> LeaveJob(int interviewId, string resignationReason, DateTime lastWorkingDate,
-            int? rating, string? comment)
+        public async Task<IActionResult> LeaveJob(int interviewId, string resignationReason)
         {
-            var interview = await _context.Interviews.Include(i => i.Worker).FirstOrDefaultAsync(i => i.InterviewId == interviewId);
-            if (interview == null) { TempData["Error"] = "Job record not found."; return RedirectToAction("Dashboard"); }
-
-            if (await _context.Resignations.AnyAsync(r => r.InterviewId == interviewId))
+            try
             {
-                TempData["Error"] = "You have already submitted a resignation for this job.";
-                return RedirectToAction("Dashboard");
+                var notice = await _workflow.SubmitAsync(WorkerId, interviewId, resignationReason);
+                TempData["Success"] = $"Resignation submitted. The seven-day notice ends on {notice.LastWorkingDate:dd MMM yyyy}; the client may accept it earlier.";
             }
-
-            _context.Resignations.Add(new Resignation
-            {
-                InterviewId = interviewId,
-                ResignationReason = resignationReason,
-                LastWorkingDate = DateOnly.FromDateTime(lastWorkingDate),
-                SubmittedDate = DateTime.Now
-            });
-            interview.Status = "ResignationPending";
-            if (interview.Worker != null) interview.Worker.AvailableStatus = true;
-
-            if (rating.HasValue)
-            {
-                _context.Reviews.Add(new Review
-                {
-                    InterviewId = interviewId,
-                    Rating = rating,
-                    Comment = comment,
-                    ReviewerRole = "Worker",
-                    ReviewDate = DateTime.Now
-                });
-            }
-            await _context.SaveChangesAsync();
-
-            TempData["Success"] = "Resignation submitted successfully.";
+            catch (ResignationWorkflowException ex) { TempData["Error"] = ex.Message; }
             return RedirectToAction("Dashboard");
         }
 
         // ── TERMINATION VIEW (client fired the worker) ────────────────────────────
-        public async Task<IActionResult> Termination()
+        public async Task<IActionResult> Termination(int? terminationId)
         {
             int workerId = WorkerId;
             var termination = await _context.Terminations
                 .Include(t => t.Interview).ThenInclude(i => i!.Client)
-                .Where(t => t.Interview!.WorkerId == workerId)
+                .Where(t => t.Interview!.WorkerId == workerId && (!terminationId.HasValue || t.TerminationId == terminationId.Value))
                 .OrderByDescending(t => t.TerminatedDate)
                 .FirstOrDefaultAsync();
 
@@ -484,57 +476,104 @@ namespace FypWeb.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> ReviewClient(int interviewId, int rating, string? comment)
         {
-            bool already = await _context.Reviews.AnyAsync(r => r.InterviewId == interviewId && r.ReviewerRole == "Worker");
-            if (!already)
+            try
             {
-                _context.Reviews.Add(new Review
-                {
-                    InterviewId = interviewId,
-                    Rating = rating,
-                    Comment = comment,
-                    ReviewerRole = "Worker",
-                    ReviewDate = DateTime.Now
-                });
-                await _context.SaveChangesAsync();
+                await _workflow.SubmitWorkerReviewAsync(WorkerId, interviewId, rating, comment);
+                TempData["Success"] = "Review submitted.";
             }
-            TempData["Success"] = "Review submitted.";
+            catch (ResignationWorkflowException ex) { TempData["Error"] = ex.Message; }
             return RedirectToAction("Termination");
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ResignationReview(int id)
+        {
+            await _workflow.ProcessDueAsync(workerId: WorkerId);
+            var notice = await _context.Resignations.Include(r => r.Interview).ThenInclude(i => i!.Client)
+                .FirstOrDefaultAsync(r => r.ResignationId == id && r.Interview != null && r.Interview.WorkerId == WorkerId);
+            if (notice?.Interview == null) return NotFound();
+            var interviewId = notice.InterviewId ?? 0;
+            var rows = await _context.Reviews.Where(r => r.InterviewId == interviewId)
+                .OrderByDescending(r => r.ReviewDate).ToListAsync();
+            var windows = await ReviewHelpers.LoadContractWindowsAsync(_context, new List<int> { interviewId },
+                rows.GroupBy(r => r.InterviewId ?? 0).ToDictionary(g => g.Key, g => g.Max(x => x.ReviewDate)));
+            windows.TryGetValue(interviewId, out var window);
+            ReviewVM? Map(string role) => rows.Where(r => r.ReviewerRole == role).OrderByDescending(r => r.ReviewDate)
+                .Select(r => new ReviewVM
+                {
+                    Rating = r.Rating ?? 0,
+                    Comment = r.Comment,
+                    ReviewerRole = role,
+                    ReviewerName = role == "Client" ? notice.Interview.Client?.Name ?? "Client" : "You",
+                    ReviewDate = r.ReviewDate?.ToString("dd MMM yyyy") ?? "",
+                    EndType = "Resigned",
+                    WorkedPeriod = ReviewHelpers.FormatWorkedPeriod(window.From, window.To)
+                }).FirstOrDefault();
+            var accepted = ResignationWorkflowService.IsAccepted(notice);
+            var workerReview = Map("Worker");
+            return View(new WorkerResignationReviewVM
+            {
+                ResignationId = notice.ResignationId,
+                InterviewId = interviewId,
+                ClientName = notice.Interview.Client?.Name ?? "Client",
+                ClientPicture = notice.Interview.Client?.Picture,
+                Reason = notice.ResignationReason,
+                IsAccepted = accepted,
+                AcceptanceMode = notice.AcceptanceMode,
+                SubmittedDate = notice.SubmittedDate?.ToString("dd MMM yyyy") ?? "",
+                LastWorkingDate = notice.LastWorkingDate.ToString("dd MMM yyyy"),
+                AcceptedAtUtc = notice.AcceptedAtUtc,
+                ClientReview = Map("Client"),
+                WorkerReview = workerReview,
+                CanReview = accepted && workerReview == null
+            });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ResignationReview(int id, int rating, string? comment)
+        {
+            var interviewId = await _context.Resignations.Where(r => r.ResignationId == id && r.Interview != null && r.Interview.WorkerId == WorkerId)
+                .Select(r => r.InterviewId).FirstOrDefaultAsync();
+            if (interviewId == null) return NotFound();
+            try
+            {
+                await _workflow.SubmitWorkerReviewAsync(WorkerId, interviewId.Value, rating, comment);
+                TempData["Success"] = "Your client review has been saved.";
+            }
+            catch (ResignationWorkflowException ex) { TempData["Error"] = ex.Message; }
+            return RedirectToAction("ResignationReview", new { id });
         }
 
         // ── HABITS ────────────────────────────────────────────────────────────────
         [HttpGet]
         public async Task<IActionResult> Habits()
         {
-            int workerId = WorkerId;
-            ViewBag.AllHabits = await _context.Habits.Where(h => h.IsActive)
+            ViewBag.AllHabits = await _context.Habits.Where(h => h.IsActive && h.IsWorkerSelectable)
                 .OrderBy(h => h.SortOrder).ThenBy(h => h.Name)
-                .Select(h => new { h.HabitId, h.Name }).ToListAsync();
-            var selected = await _context.WorkerHabits.Where(wh => wh.WorkerId == workerId)
-                .Select(wh => wh.HabitId).ToListAsync();
-            return View(selected);
+                .Select(h => new { h.HabitId, h.Name, h.ExclusiveGroup }).ToListAsync();
+            return View(await _context.WorkerHabits.Where(wh => wh.WorkerId == WorkerId).Select(wh => wh.HabitId).ToListAsync());
         }
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Habits(List<int> habitIds)
         {
-            int workerId = WorkerId;
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            var wanted = (habitIds ?? new()).Where(id => id > 0).Distinct().ToList();
+            var habits = await _context.Habits.Where(h => h.IsActive && h.IsWorkerSelectable && wanted.Contains(h.HabitId)).ToListAsync();
+            if (habits.Count != wanted.Count) { TempData["Error"] = "One or more habits are no longer selectable."; return RedirectToAction("Habits"); }
+            if (HabitSelectionRules.FindExclusiveGroupConflict(habits) is { } conflict)
+            { TempData["Error"] = $"Only one habit from the '{conflict}' group may be selected."; return RedirectToAction("Habits"); }
 
-            var wanted = (habitIds ?? new List<int>()).Where(id => id > 0).Distinct().ToList();
-            var validIds = await _context.Habits.Where(h => wanted.Contains(h.HabitId)).Select(h => h.HabitId).ToListAsync();
-
-            var existing = await _context.WorkerHabits.Where(wh => wh.WorkerId == workerId).ToListAsync();
-            var toRemove = existing.Where(wh => !validIds.Contains(wh.HabitId)).ToList();
-            if (toRemove.Any()) _context.WorkerHabits.RemoveRange(toRemove);
-
-            var alreadyThere = existing.Select(wh => wh.HabitId).ToHashSet();
-            foreach (var id in validIds.Where(id => !alreadyThere.Contains(id)))
-                _context.WorkerHabits.Add(new WorkerHabits { WorkerId = workerId, HabitId = id, CreatedDate = DateTime.Now });
-
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var existing = await _context.WorkerHabits.Where(wh => wh.WorkerId == WorkerId).ToListAsync();
+            var validIds = habits.Select(h => h.HabitId).ToHashSet();
+            _context.WorkerHabits.RemoveRange(existing.Where(wh => !validIds.Contains(wh.HabitId)));
+            var already = existing.Select(wh => wh.HabitId).ToHashSet();
+            foreach (var id in validIds.Where(id => !already.Contains(id)))
+                _context.WorkerHabits.Add(new WorkerHabits { WorkerId = WorkerId, HabitId = id, CreatedDate = DateTime.Now });
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
-
             TempData["Success"] = "Habits updated.";
             return RedirectToAction("Habits");
         }
@@ -562,163 +601,99 @@ namespace FypWeb.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> EditProfile(EditWorkerProfileVM model)
         {
-            if (string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.Phone)
-                || string.IsNullOrWhiteSpace(model.Address))
-            {
-                ModelState.AddModelError(string.Empty, "Please fill out all fundamental profile details.");
-            }
+            if (string.IsNullOrWhiteSpace(model.Name) || !AccountController.ValidPhone(model.Phone) || string.IsNullOrWhiteSpace(model.Address))
+                ModelState.AddModelError(string.Empty, "Name, a valid phone number, and address are required.");
+            if (model.Age is < 16 or > 100 || model.Salary is < 0 or > 10000000)
+                ModelState.AddModelError(string.Empty, "Enter a valid age and non-negative salary.");
+            if (model.Gender is not ("Male" or "Female")) ModelState.AddModelError(string.Empty, "Choose a valid gender.");
+            if (!string.IsNullOrEmpty(model.Password) && model.Password != "********" &&
+                (!PasswordService.IsValidNewPassword(model.Password) || model.Password != model.ConfirmPassword))
+                ModelState.AddModelError(string.Empty, "New passwords must match and contain 8–100 characters.");
 
-            if (!string.IsNullOrEmpty(model.Password) && model.Password != model.ConfirmPassword)
-            {
-                ModelState.AddModelError(string.Empty, "Passwords do not match.");
-            }
+            var skills = AccountController.ParseSkills(model.SkillsJson);
+            if (skills.Count == 0 || !await SkillsAreValid(skills)) ModelState.AddModelError(string.Empty, "Select valid skills belonging to their categories.");
+            var primaryCategories = skills.Where(x => x.IsPrimary).Select(x => x.CategoryId).Distinct().ToList();
+            if (primaryCategories.Count > 1) ModelState.AddModelError(string.Empty, "Only one primary category is allowed.");
+            var primaryCategory = primaryCategories.SingleOrDefault();
+            var experiences = AccountController.ParseExperiences(model.ExperiencesJson, out var experienceError);
+            if (experienceError != null) ModelState.AddModelError(string.Empty, experienceError);
 
-            // Skills (junction rows) — the RN edit form blocks an empty list.
-            List<SkillInput> skills = new();
-            if (!string.IsNullOrWhiteSpace(model.SkillsJson))
-            {
-                try { skills = JsonConvert.DeserializeObject<List<SkillInput>>(model.SkillsJson) ?? new(); }
-                catch { ModelState.AddModelError(string.Empty, "Skills payload was not in the expected format."); }
-            }
-            skills = skills.Where(s => s.CategoryId > 0 && s.SkillsId > 0)
-                           .GroupBy(s => (s.CategoryId, s.SkillsId)).Select(g => g.First()).ToList();
-            if (skills.Count == 0)
-            {
-                ModelState.AddModelError(string.Empty, "Please add at least one sub-skill to proceed.");
-            }
-
-            // Experience — plain work history now (no category/skill fields).
-            List<ExperienceInput> experiences = new();
-            if (!string.IsNullOrWhiteSpace(model.ExperiencesJson))
-            {
-                try { experiences = JsonConvert.DeserializeObject<List<ExperienceInput>>(model.ExperiencesJson) ?? new(); }
-                catch { ModelState.AddModelError(string.Empty, "Experience payload was not in the expected format."); }
-            }
+            var wanted = (model.HabitIds ?? new()).Where(id => id > 0).Distinct().ToList();
+            var habits = await _context.Habits.Where(h => h.IsActive && h.IsWorkerSelectable && wanted.Contains(h.HabitId)).ToListAsync();
+            if (habits.Count != wanted.Count) ModelState.AddModelError(string.Empty, "One or more selected habits are not available.");
+            if (HabitSelectionRules.FindExclusiveGroupConflict(habits) is { } conflict)
+                ModelState.AddModelError(string.Empty, $"Only one habit from the '{conflict}' group may be selected.");
 
             var existing = await _context.Workers.FindAsync(WorkerId);
             if (existing == null) return NotFound();
-
             if (!ModelState.IsValid)
             {
-                await PopulateEditLookupsAsync();
-                model.Cnic = existing.Cnic;
-                model.CurrentPicture = existing.Picture;
+                await PopulateEditLookupsAsync(); model.Cnic = existing.Cnic; model.CurrentPicture = existing.Picture;
                 return View(model);
             }
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            await using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Optional new photo — identifier mirrors UpdateWorker (Cnic).
                 if (model.PictureFile != null)
                 {
-                    string identifier = model.Cnic ?? existing.Cnic;
-                    string? imagePath = await _images.SaveImageAsync(model.PictureFile, identifier);
+                    var imagePath = await _images.SaveImageAsync(model.PictureFile);
                     if (imagePath == "Invalid")
                     {
-                        ModelState.AddModelError(string.Empty, "Only .jpg, .jpeg, and .png files are allowed.");
-                        await PopulateEditLookupsAsync();
-                        model.Cnic = existing.Cnic;
-                        model.CurrentPicture = existing.Picture;
+                        ModelState.AddModelError(string.Empty, "Choose a valid JPG or PNG image up to 5 MB.");
+                        await PopulateEditLookupsAsync(); model.Cnic = existing.Cnic; model.CurrentPicture = existing.Picture;
                         return View(model);
                     }
                     if (imagePath != null) existing.Picture = imagePath;
                 }
+                existing.Name = model.Name!.Trim(); existing.Phone = model.Phone!.Trim(); existing.Address = model.Address!.Trim();
+                existing.Age = model.Age; existing.Salary = model.Salary; existing.Gender = model.Gender; existing.Bio = model.Bio?.Trim();
+                if (!string.IsNullOrEmpty(model.Password) && model.Password != "********") existing.Password = _passwords.Hash(model.Password!);
 
-                existing.Name = model.Name;
-                existing.Phone = model.Phone;
-                existing.Address = model.Address;
-                existing.Age = model.Age;
-                existing.Salary = model.Salary;
-                existing.Gender = model.Gender;
-                existing.Bio = model.Bio;
-
-                // Blank password keeps the current one; "********" is the
-                // masked sentinel the API ignores (legacy RN prefill).
-                if (!string.IsNullOrEmpty(model.Password) && model.Password != "********")
-                {
-                    existing.Password = model.Password;
-                }
-
-                // Skills: full replace of the Worker_Category junctions.
-                var oldCats = await _context.WorkerCategories.Where(wc => wc.WorkerId == WorkerId).ToListAsync();
-                _context.WorkerCategories.RemoveRange(oldCats);
-                await _context.SaveChangesAsync();
-
-                foreach (var s in skills)
-                {
+                _context.WorkerCategories.RemoveRange(await _context.WorkerCategories.Where(x => x.WorkerId == WorkerId).ToListAsync());
+                foreach (var skill in skills)
                     _context.WorkerCategories.Add(new WorkerCategory
                     {
                         WorkerId = WorkerId,
-                        CategoryId = s.CategoryId,
-                        SkillsId = s.SkillsId
+                        CategoryId = skill.CategoryId,
+                        SkillsId = skill.SkillsId,
+                        IsPrimary = primaryCategory == 0 ? skill == skills.First() : skill.CategoryId == primaryCategory
                     });
-                }
-
-                // Experience: full replace — history rows only.
-                var oldExps = await _context.Experiences.Where(e => e.WorkerId == WorkerId).ToListAsync();
-                _context.Experiences.RemoveRange(oldExps);
-                await _context.SaveChangesAsync();
-
+                _context.Experiences.RemoveRange(await _context.Experiences.Where(x => x.WorkerId == WorkerId).ToListAsync());
                 foreach (var exp in experiences)
-                {
-                    _context.Experiences.Add(new Experience
-                    {
-                        WorkerId = WorkerId,
-                        WorkAt = exp.WorkAt,
-                        ExpDetail = exp.ExpDetail,
-                        Duration = exp.Duration
-                    });
-                }
-
-                // Habits sync — identical to UpdateWorker's habitsJson handling:
-                // unknown ids ignored, unselected removed, newly selected added.
-                var wanted = (model.HabitIds ?? new List<int>()).Where(id => id > 0).Distinct().ToList();
-                var validIds = await _context.Habits
-                    .Where(h => wanted.Contains(h.HabitId))
-                    .Select(h => h.HabitId)
-                    .ToListAsync();
-
-                var oldHabits = await _context.WorkerHabits.Where(wh => wh.WorkerId == WorkerId).ToListAsync();
-                var removeHabits = oldHabits.Where(wh => !validIds.Contains(wh.HabitId)).ToList();
-                if (removeHabits.Any()) _context.WorkerHabits.RemoveRange(removeHabits);
-
-                var haveIds = oldHabits.Select(wh => wh.HabitId).ToHashSet();
-                foreach (var id in validIds.Where(id => !haveIds.Contains(id)))
-                {
-                    _context.WorkerHabits.Add(new WorkerHabits
-                    {
-                        WorkerId = WorkerId,
-                        HabitId = id,
-                        CreatedDate = DateTime.Now
-                    });
-                }
-
+                    _context.Experiences.Add(new Experience { WorkerId = WorkerId, WorkAt = exp.WorkAt, ExpDetail = exp.ExpDetail, Duration = exp.Duration });
+                _context.WorkerHabits.RemoveRange(await _context.WorkerHabits.Where(x => x.WorkerId == WorkerId).ToListAsync());
+                foreach (var habit in habits)
+                    _context.WorkerHabits.Add(new WorkerHabits { WorkerId = WorkerId, HabitId = habit.HabitId, CreatedDate = DateTime.Now });
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                ModelState.AddModelError(string.Empty, "Update failed: " + (ex.InnerException?.Message ?? ex.Message));
-                await PopulateEditLookupsAsync();
-                model.Cnic = existing.Cnic;
-                model.CurrentPicture = existing.Picture;
+                _logger.LogError(ex, "Worker {WorkerId} profile update failed", WorkerId);
+                ModelState.AddModelError(string.Empty, "Profile update could not be completed. Please try again.");
+                await PopulateEditLookupsAsync(); model.Cnic = existing.Cnic; model.CurrentPicture = existing.Picture;
                 return View(model);
             }
-
-            // Keep the cookie (topbar name/photo claims) in sync.
-            await RefreshSignInAsync(existing.WorkerId, existing.Name, existing.Picture);
-
+            await RefreshSignInAsync(existing.WorkerId, existing.Name, existing.Picture, existing.Password);
             TempData["Success"] = "Profile updated successfully!";
             return RedirectToAction("Dashboard");
         }
 
+        private async Task<bool> SkillsAreValid(List<SkillInput> skills)
+        {
+            var pairs = skills.Select(x => new { x.CategoryId, x.SkillsId }).ToList();
+            var valid = await _context.Skills.Where(s => skills.Select(x => x.SkillsId).Contains(s.SkillsId))
+                .Select(s => new { s.CategoryId, s.SkillsId }).ToListAsync();
+            return pairs.All(x => valid.Any(v => v.CategoryId == x.CategoryId && v.SkillsId == x.SkillsId));
+        }
+
         private async Task PopulateEditLookupsAsync()
         {
-            ViewBag.AllHabits = await _context.Habits.Where(h => h.IsActive)
+            ViewBag.AllHabits = await _context.Habits.Where(h => h.IsActive && h.IsWorkerSelectable)
                 .OrderBy(h => h.SortOrder).ThenBy(h => h.Name)
-                .Select(h => new { h.HabitId, h.Name }).ToListAsync();
+                .Select(h => new { h.HabitId, h.Name, h.ExclusiveGroup }).ToListAsync();
         }
 
         private async Task<EditWorkerProfileVM> BuildEditModelAsync(Worker worker)
@@ -750,13 +725,14 @@ namespace FypWeb.Controllers
                 from c in cg.DefaultIfEmpty()
                 join s in _context.Skills on wc.SkillsId equals s.SkillsId into sg
                 from s in sg.DefaultIfEmpty()
-                orderby wc.CategoryId, wc.SkillsId
+                orderby wc.IsPrimary descending, wc.CategoryId, wc.SkillsId
                 select new SkillInput
                 {
                     CategoryId = wc.CategoryId,
                     SkillsId = wc.SkillsId,
                     CategoryName = c != null ? c.CategoryName : "",
-                    SkillName = s != null ? s.SkillName : ""
+                    SkillName = s != null ? s.SkillName : "",
+                    IsPrimary = wc.IsPrimary
                 }).ToListAsync();
 
             model.SkillsJson = JsonConvert.SerializeObject(skills);
@@ -778,7 +754,7 @@ namespace FypWeb.Controllers
 
         // Re-issues the auth cookie after a profile edit so the sidebar shows
         // the new name/photo without a re-login (same claims as Account/Login).
-        private async Task RefreshSignInAsync(int workerId, string? name, string? picture)
+        private async Task RefreshSignInAsync(int workerId, string? name, string? picture, string? storedPassword)
         {
             var claims = new List<Claim>
             {
@@ -786,7 +762,8 @@ namespace FypWeb.Controllers
                 new(ClaimTypes.Name, string.IsNullOrWhiteSpace(name) ? "Worker" : name),
                 new(ClaimTypes.Role, "Worker"),
                 new("Picture", picture ?? ""),
-                new("Email", "")
+                new("Email", ""),
+                new("PasswordStamp", PasswordService.Stamp(storedPassword))
             };
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await HttpContext.SignInAsync(
@@ -794,6 +771,81 @@ namespace FypWeb.Controllers
                 new ClaimsPrincipal(identity),
                 new AuthenticationProperties { IsPersistent = true });
         }
+
+        // ── NOTIFICATIONS: synchronized history, unread state, pagination, and deep links ──
+        [HttpGet]
+        public async Task<IActionResult> Notifications(int skip = 0, int take = 30, DateTime? snapshotAtUtc = null)
+        {
+            await _notifications.SynchronizeAsync(WorkerId);
+            skip = Math.Max(0, skip); take = Math.Clamp(take, 1, 100);
+            var snapshot = snapshotAtUtc ?? DateTime.UtcNow;
+            var query = _context.WorkerNotifications.AsNoTracking()
+                .Where(n => n.WorkerId == WorkerId && n.CreatedAtUtc <= snapshot);
+            var rows = await query.OrderByDescending(n => n.CreatedAtUtc).ThenByDescending(n => n.NotificationKey)
+                .Skip(skip).Take(take + 1).ToListAsync();
+            var hasMore = rows.Count > take;
+            rows = rows.Take(take).ToList();
+            return View(new WorkerNotificationPageVM
+            {
+                Items = rows.Select(n => new WorkerNotificationVM
+                {
+                    Key = n.NotificationKey,
+                    Type = n.Type,
+                    Title = n.Title,
+                    Message = n.Message,
+                    CreatedAtUtc = n.CreatedAtUtc,
+                    ReadAtUtc = n.ReadAtUtc,
+                    DestinationUrl = NotificationDestination(n)
+                }).ToList(),
+                UnreadCount = await query.CountAsync(n => n.ReadAtUtc == null),
+                Skip = skip,
+                Take = take,
+                HasMore = hasMore,
+                SnapshotAtUtc = snapshot
+            });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> NotificationUnreadCount()
+        {
+            await _notifications.SynchronizeAsync(WorkerId);
+            var count = await _context.WorkerNotifications.CountAsync(n => n.WorkerId == WorkerId && n.ReadAtUtc == null);
+            return Json(new { count });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> OpenNotification(string key, int skip, DateTime snapshotAtUtc)
+        {
+            var item = await _context.WorkerNotifications.FirstOrDefaultAsync(n => n.WorkerId == WorkerId && n.NotificationKey == key);
+            if (item == null) return NotFound();
+            if (item.ReadAtUtc == null) { item.ReadAtUtc = DateTime.UtcNow; await _context.SaveChangesAsync(); }
+            var destination = NotificationDestination(item);
+            if (destination != null) return LocalRedirect(destination);
+            TempData["Error"] = "This notification has no available linked screen. It remains in your history.";
+            return RedirectToAction("Notifications", new { skip, snapshotAtUtc });
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> MarkAllNotificationsRead(DateTime snapshotAtUtc, int skip = 0)
+        {
+            var now = DateTime.UtcNow;
+            var unread = await _context.WorkerNotifications.Where(n => n.WorkerId == WorkerId &&
+                n.ReadAtUtc == null && n.CreatedAtUtc <= snapshotAtUtc).ToListAsync();
+            foreach (var item in unread) item.ReadAtUtc = now;
+            await _context.SaveChangesAsync();
+            return RedirectToAction("Notifications", new { skip, snapshotAtUtc });
+        }
+
+        private string? NotificationDestination(WorkerNotification item) => item.Type switch
+        {
+            "interview" => Url.Action("Requests", "Worker", new { interviewId = item.InterviewId }),
+            "job" => Url.Action("JobConfirmations", "Worker", new { hiringId = item.SourceId }),
+            "termination" => Url.Action("Termination", "Worker", new { terminationId = item.SourceId }),
+            "resignation" => Url.Action("ResignationReview", "Worker", new { id = item.SourceId }),
+            _ => null
+        };
 
         // ── COURSES: CATALOGUE (RN WorkerCourseCatalogueScreen) ─────────────────────
         // GET api/worker/courses — published, non-deleted courses that have not
@@ -941,63 +993,80 @@ namespace FypWeb.Controllers
 
         // ── AJAX actions ──────────────────────────────────────────────────────────
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> UpdateDutyStatus([FromBody] BoolDto dto)
         {
-            var worker = await _context.Workers.FindAsync(WorkerId);
-            if (worker == null) return Json(new { ok = false });
+            if (dto == null) return Json(new { ok = false, message = "Invalid request." });
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            var worker = await _rules.LockWorkerAsync(WorkerId);
+            if (worker == null) return Json(new { ok = false, message = "Worker not found." });
+            if (dto.Value && await _rules.HasActiveExclusiveFullTimeJobAsync(WorkerId))
+                return Json(new { ok = false, message = "Availability is locked while your exclusive full-time job is active." });
             worker.AvailableStatus = dto.Value;
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
             return Json(new { ok = true, isAvailable = worker.AvailableStatus });
         }
 
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> UpdateRadius([FromBody] IntDto dto)
         {
-            if (dto.Value < 1 || dto.Value > 70) return Json(new { ok = false, message = "Invalid radius." });
+            if (dto == null || dto.Value < 1 || dto.Value > 70) return Json(new { ok = false, message = "Radius must be between 1 and 70 km." });
             var worker = await _context.Workers.FindAsync(WorkerId);
-            if (worker == null) return Json(new { ok = false });
+            if (worker == null) return Json(new { ok = false, message = "Worker not found." });
             worker.Radius = dto.Value;
             await _context.SaveChangesAsync();
             return Json(new { ok = true, radius = worker.Radius });
         }
 
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> AddTimeSlot([FromBody] SlotDto dto)
         {
-            if (!TimeSpan.TryParse(dto.StartTime, out var start) || !TimeSpan.TryParse(dto.EndTime, out var end))
-                return Json(new { ok = false, message = "Invalid time format." });
+            if (dto == null || !TimeSpan.TryParse(dto.StartTime, out var start) || !TimeSpan.TryParse(dto.EndTime, out var end) ||
+                start < TimeSpan.Zero || end < TimeSpan.Zero || start >= TimeSpan.FromDays(1) || end >= TimeSpan.FromDays(1))
+                return Json(new { ok = false, message = "Enter valid times of day." });
             if (start >= end) return Json(new { ok = false, message = "Start time must be before end time." });
 
-            int workerId = WorkerId;
-            bool overlapping = await _context.WorkerTimeSlots.AnyAsync(s => s.WorkerId == workerId &&
-                ((start >= s.StartTime && start < s.EndTime) ||
-                 (end > s.StartTime && end <= s.EndTime) ||
-                 (start <= s.StartTime && end >= s.EndTime)));
-            if (overlapping) return Json(new { ok = false, message = "The selected time slot overlaps an existing schedule." });
-
-            var slot = new WorkerTimeSlots { WorkerId = workerId, StartTime = start, EndTime = end };
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            if (await _rules.LockWorkerAsync(WorkerId) == null) return Json(new { ok = false, message = "Worker not found." });
+            var overlapping = await _context.WorkerTimeSlots.AnyAsync(s => s.WorkerId == WorkerId && s.IsActive &&
+                ((start >= s.StartTime && start < s.EndTime) || (end > s.StartTime && end <= s.EndTime) || (start <= s.StartTime && end >= s.EndTime)));
+            if (overlapping) return Json(new { ok = false, message = "The selected time slot overlaps an existing active schedule." });
+            var slot = new WorkerTimeSlots { WorkerId = WorkerId, StartTime = start, EndTime = end, IsActive = true };
             _context.WorkerTimeSlots.Add(slot);
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return Json(new { ok = true, id = slot.Id, startTime = start.ToString(@"hh\:mm"), endTime = end.ToString(@"hh\:mm") });
         }
 
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteTimeSlot([FromBody] IntDto dto)
         {
-            var slot = await _context.WorkerTimeSlots.FindAsync(dto.Value);
-            if (slot == null || slot.WorkerId != WorkerId) return Json(new { ok = false });
-            _context.WorkerTimeSlots.Remove(slot);
-            await _context.SaveChangesAsync();
+            if (dto == null) return Json(new { ok = false, message = "Invalid request." });
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            if (await _rules.LockWorkerAsync(WorkerId) == null) return Json(new { ok = false, message = "Worker not found." });
+            var slot = await _context.WorkerTimeSlots.FirstOrDefaultAsync(s => s.Id == dto.Value && s.WorkerId == WorkerId);
+            if (slot == null) return Json(new { ok = false, message = "Slot not found." });
+            var reserved = await _context.Interviews.AnyAsync(i => i.SlotId == slot.Id && i.Status != "Rejected" &&
+                i.Status != "JobRejected" && i.Status != "Terminated" && i.Status != "Resigned" &&
+                i.Status != "ResignationPending" && i.Status != "Completed");
+            if (reserved) return Json(new { ok = false, message = "A reserved slot cannot be removed until its contract ends." });
+            slot.IsActive = false;
+            await _context.SaveChangesAsync(); await transaction.CommitAsync();
             return Json(new { ok = true });
         }
 
         [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> UpdateLocation([FromBody] LatLng dto)
         {
+            if (dto == null || !AccountController.ValidCoordinates(dto.Latitude, dto.Longitude))
+                return Json(new { ok = false, message = "Enter valid latitude and longitude coordinates." });
             var worker = await _context.Workers.FindAsync(WorkerId);
-            if (worker == null) return Json(new { ok = false });
-            worker.Latitude = (decimal)dto.Latitude;
-            worker.Longitude = (decimal)dto.Longitude;
+            if (worker == null) return Json(new { ok = false, message = "Worker not found." });
+            worker.Latitude = (decimal)dto.Latitude; worker.Longitude = (decimal)dto.Longitude;
             await _context.SaveChangesAsync();
             return Json(new { ok = true });
         }

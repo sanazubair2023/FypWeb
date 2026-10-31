@@ -66,6 +66,10 @@ namespace FypWeb.Controllers
         [HttpGet]
         public async Task<IActionResult> ClientProfile(int id)
         {
+            var role = User.GetRole();
+            if (role == "Worker" && !await _context.Interviews.AnyAsync(i => i.ClientId == id && i.WorkerId == User.GetId()))
+                return Forbid();
+            if (role is not ("Client" or "Worker")) return Forbid();
             var client = await _context.Clients.AsNoTracking()
                 .FirstOrDefaultAsync(c => c.ClientId == id);
             if (client == null) return NotFound();
@@ -97,7 +101,7 @@ namespace FypWeb.Controllers
                 ClientId = client.ClientId,
                 Name = client.Name ?? "Client",
                 Picture = client.Picture,
-                Address = client.Address,
+                Address = PublicLocality(client.Address),
                 ReviewCount = reviewRows.Count,
                 Rating = reviewRows.Any() ? Math.Round(reviewRows.Average(r => (double)r.Rating), 1) : 0.0,
                 Reviews = reviewRows.Select(r =>
@@ -114,8 +118,14 @@ namespace FypWeb.Controllers
                     };
                 }).ToList()
             };
-            return View("~/Views/Client/Profile.cshtml", vm);
-            
+            return View(vm);
+        }
+
+        private static string PublicLocality(string? address)
+        {
+            if (string.IsNullOrWhiteSpace(address)) return "Location not specified";
+            var parts = address.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return parts.Length > 1 ? parts[^1] : "Locality not specified";
         }
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]

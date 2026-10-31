@@ -702,11 +702,13 @@
         // Duty toggle → UpdateDutyStatus
         document.getElementById('dutyToggle').addEventListener('change', async function () {
             var on = this.checked;
+            this.disabled = true;
             var res = await postJson('@Url.Action("UpdateDutyStatus", "Worker")', { value: on });
             if (res.ok) {
                 document.getElementById('dutyBadge').textContent = on ? 'Online' : 'Offline';
                 document.getElementById('dutyLabel').textContent = on ? 'You are currently visible to customers' : 'You are currently hidden';
-            } else { this.checked = !on; alert('Could not update status.'); }
+            } else { this.checked = !on; alert(res.message || 'Could not update status.'); }
+            this.disabled = false;
         });
 
         // Radius −/＋ buttons → UpdateRadius (RN: 1–70 km, live track fill)
@@ -722,29 +724,39 @@
             radMinus.disabled = radVal <= 1;
             radPlus.disabled = radVal >= 70;
         }
+        var radBusy = false;
         async function saveRadius(next) {
+            if (radBusy) return;
+            radBusy = true; radMinus.disabled = true; radPlus.disabled = true;
             var res = await postJson('@Url.Action("UpdateRadius", "Worker")', { value: next });
             if (res.ok) { radVal = next; paintRadius(); }
             else { alert(res.message || 'Could not save radius.'); }
+            radBusy = false; paintRadius();
         }
         radMinus.addEventListener('click', function () { if (radVal > 1) saveRadius(radVal - 1); });
         radPlus.addEventListener('click', function () { if (radVal < 70) saveRadius(radVal + 1); });
         paintRadius();
 
         // Time slots
-        function slotRowHtml(id, startTime, endTime) {
-            return '<div class="wdk-slot" data-id="' + id + '">' +
-                '<span class="wdk-green-dot"></span>' +
-                '<div class="flex-grow-1 ms-2"><div class="fw-bold small">' + startTime + ' - ' + endTime + '</div>' +
-                '<div class="text-muted" style="font-size:.72rem;">Available Shift</div></div>' +
-                '<button type="button" class="del-slot btn btn-link text-muted p-0" data-id="' + id + '" title="Delete slot"><i class="bi bi-trash"></i></button></div>';
+        function makeSlotRow(id, startTime, endTime) {
+            var row = document.createElement('div'); row.className = 'wdk-slot'; row.setAttribute('data-id', id);
+            var dot = document.createElement('span'); dot.className = 'wdk-green-dot'; row.appendChild(dot);
+            var content = document.createElement('div'); content.className = 'flex-grow-1 ms-2';
+            var times = document.createElement('div'); times.className = 'fw-bold small'; times.textContent = startTime + ' - ' + endTime;
+            var caption = document.createElement('div'); caption.className = 'text-muted'; caption.style.fontSize = '.72rem'; caption.textContent = 'Available Shift';
+            content.appendChild(times); content.appendChild(caption); row.appendChild(content);
+            var button = document.createElement('button'); button.type = 'button'; button.className = 'del-slot btn btn-link text-muted p-0';
+            button.setAttribute('data-id', id); button.title = 'Delete slot';
+            var icon = document.createElement('i'); icon.className = 'bi bi-trash'; button.appendChild(icon); row.appendChild(button);
+            return row;
         }
         function bindDelete(btn) {
             btn.addEventListener('click', async function () {
                 var id = parseInt(this.getAttribute('data-id'));
+                this.disabled = true;
                 var res = await postJson('@Url.Action("DeleteTimeSlot", "Worker")', { value: id });
                 if (res.ok) { var row = this.closest('.wdk-slot'); if (row) row.remove(); }
-                else { alert('Could not delete slot.'); }
+                else { alert(res.message || 'Could not delete slot.'); this.disabled = false; }
             });
         }
         document.querySelectorAll('.del-slot').forEach(bindDelete);
@@ -752,15 +764,16 @@
         document.getElementById('addSlot').addEventListener('click', async function () {
             var s = document.getElementById('slotStart').value, e = document.getElementById('slotEnd').value;
             if (!s || !e) { alert('Please set start and end time.'); return; }
+            this.disabled = true;
             var res = await postJson('@Url.Action("AddTimeSlot", "Worker")', { startTime: s, endTime: e });
             if (res.ok) {
                 var noSlots = document.getElementById('noSlots'); if (noSlots) noSlots.remove();
-                var wrap = document.createElement('div'); wrap.innerHTML = slotRowHtml(res.id, res.startTime, res.endTime);
-                var row = wrap.firstElementChild;
+                var row = makeSlotRow(res.id, res.startTime, res.endTime);
                 document.getElementById('slotList').appendChild(row);
                 bindDelete(row.querySelector('.del-slot'));
                 document.getElementById('slotStart').value = ''; document.getElementById('slotEnd').value = '';
             } else { alert(res.message || 'Could not add slot.'); }
+            this.disabled = false;
         });
     </script>
 }

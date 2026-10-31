@@ -1,0 +1,101 @@
+﻿@model ClientProfileVM
+@{
+    ViewData["Title"] = $"{Model.Name} · Client Profile";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    <a asp-controller="Home" asp-action="Index" class="btn btn-outline-secondary btn-sm" title="Back to dashboard">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+        <h1 class="h4 mb-0 fw-bold">Client Profile</h1>
+        <small class="text-muted">Public profile and reviews from workers</small>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card-soft">
+            <div class="card-body text-center">
+                @if (pic != null)
+                {
+                    <img src="@pic" class="detail-avatar mb-3" alt="@Model.Name"
+                         onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                    <div class="detail-avatar-fallback mb-3 mx-auto" style="display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                }
+                else
+                {
+                    <div class="detail-avatar-fallback mb-3 mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                }
+                <h2 class="h4 fw-bold mb-1">@Model.Name</h2>
+                <span class="chip chip-blue">Client</span>
+                <div class="text-muted small mt-3">
+                    <i class="bi bi-geo-alt me-1"></i>@(Model.Address ?? "Location not specified")
+                </div>
+                <div class="d-flex justify-content-center align-items-center flex-wrap gap-2 mt-3">
+                    <i class="bi bi-star-fill text-warning"></i>
+                    <span class="fw-bold">@(Model.Rating > 0 ? Model.Rating.ToString("F1") : "New")</span>
+                    <span class="text-muted small">(@Model.ReviewCount review@(Model.ReviewCount == 1 ? "" : "s"))</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card-soft">
+            <div class="card-body">
+                <h3 class="h6 fw-bold mb-3"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Reviews from Workers</h3>
+                @if (!Model.Reviews.Any())
+                {
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-chat-square-text" style="font-size:2rem;opacity:.45;"></i>
+                        <p class="mb-0 mt-2">No reviews have been left for this client yet.</p>
+                    </div>
+                }
+                else
+                {
+                    foreach (var review in Model.Reviews)
+                    {
+                        var reviewerPic = FypWeb.Helpers.ViewHelpers.Pic(review.ReviewerPicture);
+                        <article class="rounded-3 p-3 mb-2" style="background:#fff;border:1px solid #E2E8F0;">
+                            <div class="d-flex align-items-center mb-2">
+                                @if (reviewerPic != null)
+                                {
+                                    <img src="@reviewerPic" alt="@review.ReviewerName"
+                                         style="width:38px;height:38px;border-radius:19px;object-fit:cover;margin-right:12px;background:#F1F5F9;"
+                                         onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                                    <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid #3B82F6;background:#F8FAFC;display:none;place-items:center;font-weight:700;color:#3B82F6;margin-right:12px;">
+                                        @FypWeb.Helpers.ViewHelpers.Initial(review.ReviewerName)
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid #3B82F6;background:#F8FAFC;display:grid;place-items:center;font-weight:700;color:#3B82F6;margin-right:12px;">
+                                        @FypWeb.Helpers.ViewHelpers.Initial(review.ReviewerName)
+                                    </div>
+                                }
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" style="font-size:.88rem;">@review.ReviewerName</div>
+                                    <div class="text-muted" style="font-size:.7rem;">@review.Date</div>
+                                </div>
+                                <div class="d-flex align-items-center gap-1">
+                                    <i class="bi bi-star-fill text-warning"></i>
+                                    <span class="fw-bold">@review.Rating.ToString("0.##")</span>
+                                </div>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(review.WorkedPeriod))
+                            {
+                                <div class="small text-muted mb-2"><i class="bi bi-briefcase me-1"></i>Worked: @review.WorkedPeriod</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(review.Comment))
+                            {
+                                <p class="mb-0" style="font-size:.82rem;color:#475569;">@review.Comment</p>
+                            }
+                        </article>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
