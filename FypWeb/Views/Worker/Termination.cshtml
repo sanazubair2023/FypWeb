@@ -37,10 +37,16 @@ else
                         {
                             <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(client?.Name)</div>
                         }
-                        <div>
+                        <div class="flex-grow-1">
                             <h5 class="fw-bold mb-0">@(client?.Name ?? "Client")</h5>
                             <span class="chip chip-red">Contract Terminated</span>
                         </div>
+                        @if (Model.InterviewId.HasValue)
+                        {
+                            <a asp-action="ContractSummary" asp-route-interviewId="@Model.InterviewId" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-file-earmark-text me-1"></i>Summary
+                            </a>
+                        }
                     </div>
 
                     <div class="row g-2 mb-3">

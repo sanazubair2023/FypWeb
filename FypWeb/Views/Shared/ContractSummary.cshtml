@@ -1,0 +1,94 @@
+﻿@* RN Worker/WorkerTerminatedScreen.js — Unified Contract Exit Summary (Terminated / Resigned). *@
+@model ContractExitSummaryVM
+@{
+    bool isTerminated = string.Equals(Model.Status, "Terminated", StringComparison.OrdinalIgnoreCase);
+    ViewData["Title"] = isTerminated ? "Terminated Contract Summary" : "Resigned Contract Summary";
+    var workerPic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerPicture);
+    var clientPic = FypWeb.Helpers.ViewHelpers.Pic(Model.ClientPicture);
+}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    @if (Model.ViewerRole == "Worker")
+    {
+        <a asp-controller="Worker" asp-action="Dashboard" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+    }
+    else
+    {
+        <a asp-controller="Client" asp-action="Dashboard" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+    }
+    <div>
+        <h1 class="h4 mb-0 fw-bold">Contract Exit Summary</h1>
+        <small class="text-muted">Official record of ended employment contract</small>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card-soft overflow-hidden">
+            <div class="p-4 text-white d-flex align-items-center justify-content-between flex-wrap gap-2"
+                 style="background:@(isTerminated ? "#DC2626" : "#7C3AED");">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="d-grid" style="width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.2);place-items:center;font-size:1.5rem;">
+                        <i class="bi @(isTerminated ? "bi-file-earmark-x-fill" : "bi-file-earmark-check-fill")"></i>
+                    </div>
+                    <div>
+                        <div class="small fw-bold" style="opacity:.9;letter-spacing:1px;">CONTRACT STATUS</div>
+                        <div class="h5 mb-0 fw-bold">@(isTerminated ? "Contract Terminated" : "Contract Resigned")</div>
+                    </div>
+                </div>
+                <span class="badge bg-white text-dark px-3 py-2">
+                    <i class="bi bi-calendar-event me-1"></i>@Model.Date
+                </span>
+            </div>
+
+            <div class="card-body p-4">
+                <div class="row g-3 mb-4">
+                    <!-- Worker Card -->
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                            <div class="text-muted small fw-bold mb-2">WORKER DETAILS</div>
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                @if (workerPic != null)
+                                {
+                                    <img src="@workerPic" alt="@Model.WorkerName" style="width:44px;height:44px;border-radius:50%;object-fit:cover;"
+                                         onerror="this.style.display='none';" />
+                                }
+                                <div>
+                                    <div class="fw-bold">@Model.WorkerName</div>
+                                    <span class="chip chip-blue">@Model.WorkerSkill</span>
+                                </div>
+                            </div>
+                            <div class="small text-secondary mt-2"><i class="bi bi-telephone me-1"></i>@(Model.WorkerPhone ?? "N/A")</div>
+                            <div class="small text-secondary mt-1"><i class="bi bi-geo-alt me-1"></i>@(Model.WorkerAddress ?? "N/A")</div>
+                        </div>
+                    </div>
+
+                    <!-- Employer Card -->
+                    <div class="col-md-6">
+                        <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                            <div class="text-muted small fw-bold mb-2">EMPLOYER / CLIENT</div>
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                @if (clientPic != null)
+                                {
+                                    <img src="@clientPic" alt="@Model.ClientName" style="width:44px;height:44px;border-radius:50%;object-fit:cover;"
+                                         onerror="this.style.display='none';" />
+                                }
+                                <div>
+                                    <div class="fw-bold">@Model.ClientName</div>
+                                    <span class="chip chip-gray">Client</span>
+                                </div>
+                            </div>
+                            <div class="small text-secondary mt-2"><i class="bi bi-geo-alt me-1"></i>@(Model.ClientAddress ?? "N/A")</div>
+                        </div>
+                    </div>
+                </div>
+
+                <partial name="_ReviewEndReason" model="(Model.Status, Model.Reason)" />
+            </div>
+        </div>
+    </div>
+</div>

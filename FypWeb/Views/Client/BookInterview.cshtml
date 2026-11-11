@@ -2,15 +2,18 @@
 @{
     ViewData["Title"] = "Book Interview";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerPicture);
-    string date = ViewBag.Date as string ?? DateTime.Today.ToString("yyyy-MM-dd");
-    bool allowNonExclusive = ViewBag.AllowNonExclusive == true;
-    bool hasActiveFullTime = ViewBag.HasActiveFullTime == true;
+    string date = ViewBag.Date as string ?? Model.SelectedDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.ToString("yyyy-MM-dd");
+    bool allowNonExclusive = ViewBag.AllowNonExclusive == true || !Model.IsExclusive;
+    bool hasActiveFullTime = ViewBag.HasActiveFullTime == true || Model.HasActiveFullTimeJob;
+    bool conflictActiveFullTime = Model.ConflictActiveFullTime || (ViewBag.ConflictActiveFullTime == true);
+    var preselectedSkills = Model.SelectedSkillIds ?? (ViewBag.SelectedSkillIds as List<int>) ?? new List<int>();
+    bool hasOfferedSkills = Model.OfferedSkillGroups != null && Model.OfferedSkillGroups.Any(g => g.Skills.Any());
 }
 
 <a asp-action="WorkerDetail" asp-route-id="@Model.WorkerId" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to profile</a>
 
 <div class="row g-3 justify-content-center">
-    <div class="col-lg-7">
+    <div class="col-lg-8">
         <div class="card-soft">
             <div class="card-body">
                 <div class="d-flex align-items-center gap-3 mb-3">
@@ -24,7 +27,7 @@
                         <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(Model.WorkerName)</div>
                     }
                     <div>
-                        <h5 class="fw-bold mb-0">Interview with @Model.WorkerName</h5>
+                        <h5 class="fw-bold mb-1">Interview with @Model.WorkerName</h5>
                         <span class="chip @(Model.IsPartTime ? "chip-blue" : "chip-amber")">
                             @(Model.IsPartTime ? "Part-Time" : "Full-Time") engagement
                         </span>
@@ -36,17 +39,39 @@
                     Distance @Model.DistanceKm km within a @Model.Radius km radius —
                     @if (Model.IsPartTime)
                     {
-                        <text>this is <strong>Part-Time</strong>. Please pick one of the worker's available time slots.</text>
+                        <text>this is <strong>Part-Time</strong>. Select the required skills and one of the worker's available recurring slots.</text>
                     }
                     else
                     {
-                        <text>this is <strong>Full-Time</strong> (live-in). Indicate if residence is provided.</text>
+                        <text>this is <strong>Full-Time</strong> (live-in). Select the required skills and indicate residence/exclusivity preferences.</text>
                     }
                 </div>
 
                 <form asp-action="BookInterview" method="post" id="bookForm">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                    <input type="hidden" name="forceNonExclusive" id="forceNonExclusiveInput" value="@(conflictActiveFullTime ? "true" : "false")" />
+
+                    @if (conflictActiveFullTime)
+                    {
+                        <div class="alert border-warning shadow-sm mb-3" style="background:#FFFBEB;border-radius:14px;">
+                            <div class="fw-bold text-warning-emphasis mb-1">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Active Full-Time Contract Detected
+                            </div>
+                            <p class="small text-dark mb-2">
+                                This worker already has an active full-time contract, so an exclusive full-time request cannot be booked right now. Would you like to send a non-exclusive interview request instead, or choose another worker?
+                            </p>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="submit" class="btn btn-warning btn-sm fw-semibold"
+                                        onclick="var ex=document.getElementById('exclusiveSwitch'); if(ex) ex.checked=false; document.getElementById('forceNonExclusiveInput').value='true';">
+                                    <i class="bi bi-send me-1"></i>Proceed as Non-Exclusive Request
+                                </button>
+                                <a asp-action="FindService" class="btn btn-outline-secondary btn-sm">
+                                    <i class="bi bi-search me-1"></i>Find Another Worker
+                                </a>
+                            </div>
+                        </div>
+                    }
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
@@ -66,14 +91,55 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Address</label>
+                        <label class="form-label fw-semibold">Interview / Job Address</label>
                         <textarea name="address" class="form-control" rows="2" maxlength="1000" placeholder="Where should the interview take place?">@Model.ClientAddress</textarea>
                     </div>
+
+                    <!-- Offered Skills Selection (RN BookInterviewScreen parity) -->
+                    @if (hasOfferedSkills)
+                    {
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <label class="form-label fw-semibold mb-0">
+                                    Required Job Skills <span class="text-danger">*</span>
+                                </label>
+                                <span class="small text-muted" id="skillCountBadge">0 selected</span>
+                            </div>
+                            <div class="form-text mb-2">
+                                Select the specific skills you are hiring @Model.WorkerName for. You will rate these exact skills at contract end.
+                            </div>
+
+                            @foreach (var grp in Model.OfferedSkillGroups!.Where(g => g.Skills.Any()))
+                            {
+                                <div class="p-3 rounded-3 mb-2" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <span class="small fw-bold text-uppercase" style="color:#1E64D3;letter-spacing:.04em;">
+                                            <i class="bi bi-briefcase me-1"></i>@grp.CategoryName
+                                        </span>
+                                    </div>
+                                    <div class="row g-2">
+                                        @foreach (var sk in grp.Skills)
+                                        {
+                                            var isChecked = preselectedSkills.Contains(sk.SkillsId);
+                                            <div class="col-sm-6">
+                                                <label class="d-flex align-items-center gap-2 p-2 rounded-2 bg-white border skill-pick-label" style="cursor:pointer;">
+                                                    <input type="checkbox" class="form-check-input m-0 skill-checkbox"
+                                                           name="selectedSkillIds" value="@sk.SkillsId"
+                                                           checked="@(isChecked ? "checked" : null)" />
+                                                    <span class="small fw-semibold text-dark">@sk.SkillName</span>
+                                                </label>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
 
                     @if (Model.IsPartTime)
                     {
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Recurring Time Slots</label>
+                            <label class="form-label fw-semibold">Recurring Time Slots <span class="text-danger">*</span></label>
                             <div class="form-text mb-2">A booked slot stays reserved across interview dates until its contract ends or enters resignation notice.</div>
                             @if (!Model.Slots.Any())
                             {
@@ -85,12 +151,14 @@
                                 {
                                     <div class="alert alert-warning py-2 small">All published slots are currently reserved. You can review them below, but cannot send a part-time request yet.</div>
                                 }
-                                <input type="hidden" name="slotId" id="slotIdField" />
+                                <input type="hidden" name="slotId" id="slotIdField" value="@(Model.SelectedSlotId?.ToString() ?? "")" />
                                 <div class="row g-2">
                                     @foreach (var slot in Model.Slots)
                                     {
+                                        bool isSelectedSlot = Model.SelectedSlotId.HasValue && Model.SelectedSlotId.Value == slot.Id && !slot.IsTaken;
                                         <div class="col-6 col-md-4">
-                                            <div class="slot-pill @(slot.IsTaken ? "taken" : "")" data-id="@slot.Id" data-taken="@slot.IsTaken.ToString().ToLower()">
+                                            <div class="slot-pill @(slot.IsTaken ? "taken" : (isSelectedSlot ? "selected" : ""))"
+                                                 data-id="@slot.Id" data-taken="@slot.IsTaken.ToString().ToLower()">
                                                 <i class="bi bi-clock me-1"></i>@slot.StartTime - @slot.EndTime
                                                 @if (slot.IsTaken)
                                                 {
@@ -100,23 +168,27 @@
                                         </div>
                                     }
                                 </div>
-                                <div class="form-text" id="slotHint">Select an open slot.</div>
+                                <div class="form-text" id="slotHint">@(Model.SelectedSlotId.HasValue ? "Slot selected ✔" : "Select an open slot.")</div>
                             }
                         </div>
                     }
                     else
                     {
-                        if (hasActiveFullTime)
+                        if (hasActiveFullTime && !conflictActiveFullTime)
                         {
-                            <div class="alert alert-warning small"><i class="bi bi-exclamation-triangle me-1"></i>This worker has an active full-time job. An exclusive request will be rejected; a non-exclusive request can be sent, but final hiring must wait until that job ends.</div>
+                            <div class="alert alert-warning small">
+                                <i class="bi bi-exclamation-triangle me-1"></i>This worker has an active full-time job. An exclusive request will prompt confirmation; a non-exclusive request can be sent now, and final hiring waits until their active job ends.
+                            </div>
                         }
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" name="isExclusive" value="true" id="exclusiveSwitch" @(allowNonExclusive ? "" : "checked") />
+                            <input class="form-check-input" type="checkbox" name="isExclusive" value="true" id="exclusiveSwitch"
+                            @((allowNonExclusive || conflictActiveFullTime) ? "" : "checked") />
                             <label class="form-check-label fw-semibold" for="exclusiveSwitch">Request exclusive full-time engagement</label>
                             <div class="form-text">Exclusive engagement locks the worker’s public availability when hiring is finalized.</div>
                         </div>
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" name="isResidenceProvided" value="true" id="resSwitch" />
+                            <input class="form-check-input" type="checkbox" name="isResidenceProvided" value="true" id="resSwitch"
+                            @(Model.IsResidenceProvided ? "checked" : "") />
                             <label class="form-check-label fw-semibold" for="resSwitch">Residence / accommodation provided</label>
                         </div>
                     }
@@ -136,10 +208,19 @@
         (function () {
             var dateInput = document.getElementById('dateInput');
             var timeInput = document.getElementById('timeInput');
+            var skillBoxes = Array.prototype.slice.call(document.querySelectorAll('.skill-checkbox'));
+            var skillBadge = document.getElementById('skillCountBadge');
+
+            function updateSkillCount() {
+                if (!skillBadge) return;
+                var n = skillBoxes.filter(function (cb) { return cb.checked; }).length;
+                skillBadge.textContent = n + ' selected';
+            }
+            skillBoxes.forEach(function (cb) { cb.addEventListener('change', updateSkillCount); });
+            updateSkillCount();
+
             if (dateInput) {
                 dateInput.addEventListener('change', function () {
-                    // reload slot availability for the chosen date, keeping the
-                    // clock pick intact
                     var url = '@Url.Action("BookInterview", "Client")?workerId=@Model.WorkerId&date=' + this.value;
                     if (timeInput && timeInput.value) url += '&time=' + encodeURIComponent(timeInput.value);
                     url += '&allowNonExclusive=' + @(allowNonExclusive ? "true" : "false");
@@ -160,9 +241,17 @@
             });
 
             var form = document.getElementById('bookForm');
-            if (form && slotField !== null) {
+            if (form) {
                 form.addEventListener('submit', function (e) {
-                    if (!slotField.value) { e.preventDefault(); alert('Please select a time slot.'); }
+                    if (skillBoxes.length > 0 && !skillBoxes.some(function (cb) { return cb.checked; })) {
+                        e.preventDefault();
+                        alert('Please select at least one skill for this interview.');
+                        return;
+                    }
+                    if (slotField !== null && !slotField.value) {
+                        e.preventDefault();
+                        alert('Please select a time slot.');
+                    }
                 });
             }
         })();

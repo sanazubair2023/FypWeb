@@ -1,11 +1,28 @@
 @model List<InterviewRequestVM>
 @{
     ViewData["Title"] = "Hiring Decisions";
+    string search = ViewBag.Search as string ?? "";
 }
 
 <div class="page-head">
     <h1>Hiring Decisions</h1>
-    <p>Track your job offers. Finalize once the worker accepts the offer.</p>
+    <p>Track your job offers and finalize hiring once the worker accepts the offer.</p>
+</div>
+
+<div class="card-soft mb-3">
+    <div class="card-body py-2">
+        <form method="get" asp-action="WorkerDecisions" class="d-flex gap-2 align-items-center">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="text" name="search" value="@search" class="form-control" placeholder="Search job offers by worker name…" />
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary px-3">Search</button>
+            @if (!string.IsNullOrWhiteSpace(search))
+            {
+                <a asp-action="WorkerDecisions" class="btn btn-sm btn-outline-secondary">Reset</a>
+            }
+        </form>
+    </div>
 </div>
 
 @if (!Model.Any())
@@ -13,9 +30,9 @@
     <div class="card-soft">
         <div class="empty-state">
             <i class="bi bi-clipboard-check"></i>
-            <h5 class="mt-3">No hiring in progress</h5>
-            <p>Send a job offer from your Active Requests to get started.</p>
-            <a asp-action="ActiveRequests" class="btn btn-primary">Active Requests</a>
+            <h5 class="mt-3">No hiring offers found</h5>
+            <p>Send a job offer from your Interview Requests once a worker accepts your interview.</p>
+            <a asp-action="ActiveRequests" class="btn btn-primary">Interview Requests</a>
         </div>
     </div>
 }
@@ -27,9 +44,9 @@ else
                 <table class="table align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th>Worker</th>
-                            <th>Location</th>
-                            <th>Type</th>
+                            <th>Worker &amp; Role</th>
+                            <th>Location &amp; Skills</th>
+                            <th>Engagement</th>
                             <th>Worker's Response</th>
                             <th>Status</th>
                             <th class="text-end">Action</th>
@@ -39,6 +56,7 @@ else
                         @foreach (var r in Model)
                         {
                             var pic = FypWeb.Helpers.ViewHelpers.Pic(r.OtherPartyPicture);
+                            bool isEnded = r.Status == "Terminated" || r.Status == "Resigned" || r.Status == "Completed";
                             <tr>
                                 <td>
                                     <div class="d-flex align-items-center gap-2">
@@ -51,15 +69,48 @@ else
                                         {
                                             <span class="avatar-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</span>
                                         }
-                                        <span class="fw-semibold">@r.OtherPartyName</span>
+                                        <div>
+                                            <a asp-action="WorkerDetail" asp-route-id="@r.OtherPartyId" class="fw-semibold text-dark text-decoration-none">
+                                                @r.OtherPartyName
+                                            </a>
+                                            @if (!string.IsNullOrWhiteSpace(r.CategoryName))
+                                            {
+                                                <div class="small text-muted">@r.CategoryName</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(r.HiringDate))
+                                            {
+                                                <div class="text-muted" style="font-size:.72rem;">Offered @r.HiringDate</div>
+                                            }
+                                        </div>
                                     </div>
                                 </td>
-                                <td class="small text-muted">@r.Location</td>
+                                <td>
+                                    <div class="small text-muted">@r.Location</div>
+                                    @if (r.SelectedSkills != null && r.SelectedSkills.Any())
+                                    {
+                                        <div class="d-flex flex-wrap gap-1 mt-1">
+                                            @foreach (var sk in r.SelectedSkills.Take(3))
+                                            {
+                                                <span class="badge rounded-pill" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #DBEAFE;font-weight:600;font-size:.68rem;">
+                                                    @sk
+                                                </span>
+                                            }
+                                            @if (r.SelectedSkills.Count > 3)
+                                            {
+                                                <span class="badge rounded-pill bg-light text-muted border" style="font-size:.68rem;">+@(r.SelectedSkills.Count - 3)</span>
+                                            }
+                                        </div>
+                                    }
+                                </td>
                                 <td>
                                     <span class="chip chip-blue">@r.JobType</span>
+                                    @if (r.JobType == "Part-Time" && !string.IsNullOrEmpty(r.SlotStart))
+                                    {
+                                        <div class="small text-muted mt-1"><i class="bi bi-clock me-1"></i>@r.SlotStart – @r.SlotEnd</div>
+                                    }
                                     @if (r.IsExclusive && r.JobType == "Full-Time")
                                     {
-                                        <div class="small fw-semibold mt-1" style="color:#9A3412;"><i class="bi bi-lock-fill me-1"></i>Exclusive full-time commitment</div>
+                                        <div class="small fw-semibold mt-1" style="color:#9A3412;"><i class="bi bi-lock-fill me-1"></i>Exclusive</div>
                                     }
                                 </td>
                                 <td>
@@ -77,7 +128,11 @@ else
                                     }
                                 </td>
                                 <td>
-                                    @if (r.HiringDecision == "Accepted" || r.Status == "Finalized")
+                                    @if (isEnded)
+                                    {
+                                        <span class="chip @(r.Status == "Terminated" ? "chip-red" : "chip-amber")">@r.Status</span>
+                                    }
+                                    else if (r.HiringDecision == "Accepted" || r.Status == "Finalized")
                                     {
                                         <span class="chip chip-green">Hired</span>
                                     }
@@ -87,7 +142,7 @@ else
                                     }
                                 </td>
                                 <td class="text-end">
-                                    @if (r.HiringWorkerDecision == "Accepted" && r.HiringDecision != "Accepted" && r.Status != "Finalized")
+                                    @if (r.HiringWorkerDecision == "Accepted" && r.HiringDecision != "Accepted" && r.Status != "Finalized" && !isEnded)
                                     {
                                         <form asp-action="FinalizeHiring" method="post" class="d-inline">
                                             @Html.AntiForgeryToken()
@@ -95,9 +150,15 @@ else
                                             <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2-all me-1"></i>Finalize Hire</button>
                                         </form>
                                     }
+                                    else if (isEnded)
+                                    {
+                                        <a asp-action="ContractSummary" asp-route-workerId="@r.OtherPartyId" asp-route-interviewId="@r.InterviewId" class="btn btn-outline-secondary btn-sm">
+                                            Summary
+                                        </a>
+                                    }
                                     else if (r.HiringDecision == "Accepted" || r.Status == "Finalized")
                                     {
-                                        <span class="text-success small"><i class="bi bi-check-circle-fill"></i> Complete</span>
+                                        <span class="text-success small"><i class="bi bi-check-circle-fill"></i> Active</span>
                                     }
                                     else
                                     {

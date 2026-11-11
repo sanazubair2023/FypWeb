@@ -6,9 +6,6 @@ namespace FypWeb.Services;
 
 public sealed class WorkerNotificationService(Fyp1Context db, ResignationWorkflowService workflow)
 {
-    // Existing source tables do not have reliable event-created timestamps.
-    // CreatedAtUtc records when this center first observes a source event, not
-    // the scheduled interview date. Stable keys prevent duplicates on refresh.
     public async Task SynchronizeAsync(int workerId, CancellationToken cancellationToken = default)
     {
         await workflow.ProcessDueAsync(workerId: workerId, ct: cancellationToken);
@@ -44,8 +41,6 @@ public sealed class WorkerNotificationService(Fyp1Context db, ResignationWorkflo
             var message = stage == "confirmed" ? $"{name} confirmed your job. Open the job details."
                 : stage == "rejected" ? $"{name} decided not to proceed with this job."
                 : $"{name} sent you a job offer. Open it to view the current status or respond.";
-            // Confirmation/rejection is a separate event from an earlier offer.
-            // The worker's own accept/reject action does not create another alert.
             candidates.Add(New($"job:{h.HiringId}:{stage}", "job", h.HiringId,
                 h.InterviewId, title, message));
         }
@@ -81,14 +76,64 @@ public sealed class WorkerNotificationService(Fyp1Context db, ResignationWorkflo
             candidates.Add(ResignationWorkflowService.AcceptanceNotice(workerId, r.ResignationId,
                 r.InterviewId, r.AcceptanceMode, r.HasReview, observedAt));
 
-        // Another device/server may discover the same events concurrently. The
-        // composite PK is the final guard; retry only SQL duplicate-key failures.
+        // Backfill Company Skill Evaluation Certificates (exact Fyp_Backend key: company-certificate:{CertificationID})
+        var companyCerts = await db.WorkerCertifications.AsNoTracking()
+            .Where(c => c.WorkerID == workerId)
+            .Select(c => new
+            {
+                c.CertificationID,
+                c.CertificateTitle,
+                CompanyName = c.Company != null ? c.Company.CompanyName : null
+            })
+            .ToListAsync(cancellationToken);
+        foreach (var cert in companyCerts)
+        {
+            var company = string.IsNullOrWhiteSpace(cert.CompanyName) ? "A verified company" : cert.CompanyName;
+            var title = string.IsNullOrWhiteSpace(cert.CertificateTitle) ? "Skill Evaluation Certificate" : cert.CertificateTitle;
+            candidates.Add(New($"company-certificate:{cert.CertificationID}", "company-certificate", workerId,
+                null, "New skill certificate issued", $"{company} issued your \"{title}\" skill certificate."));
+        }
+
+        // Backfill Course Completion Certificates (exact Fyp_Backend key: course-certificate:{CertificateID})
+        var courseCerts = await db.CourseCertificates.AsNoTracking()
+            .Where(c => c.WorkerID == workerId && !c.IsRevoked)
+            .Select(c => new
+            {
+                c.CertificateID,
+                CourseTitle = c.Course != null ? c.Course.CourseName : null,
+                CompanyName = c.Company != null ? c.Company.CompanyName : null
+            })
+            .ToListAsync(cancellationToken);
+        foreach (var cc in courseCerts)
+        {
+            var company = string.IsNullOrWhiteSpace(cc.CompanyName) ? "Training company" : cc.CompanyName;
+            var course = string.IsNullOrWhiteSpace(cc.CourseTitle) ? "training course" : cc.CourseTitle;
+            candidates.Add(New($"course-certificate:{cc.CertificateID}", "course-certificate", cc.CertificateID,
+                null, "Course certificate issued", $"{company} issued your certificate for completing \"{course}\"."));
+        }
+
+        // Backfill Police Character Certificate if worker has one and no police-certificate notification exists yet
+        var policeCert = await db.PoliceRecords.AsNoTracking()
+            .Where(pr => pr.WorkerID == workerId && !pr.IsRevoked)
+            .OrderByDescending(pr => pr.IssuedDate)
+            .Select(pr => new { pr.CertificateNo, pr.IssuingStation })
+            .FirstOrDefaultAsync(cancellationToken);
+
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var known = (await db.WorkerNotifications.AsNoTracking()
                 .Where(n => n.WorkerId == workerId).Select(n => n.NotificationKey)
                 .ToListAsync(cancellationToken)).ToHashSet(StringComparer.Ordinal);
-            var missing = candidates.Where(n => !known.Contains(n.NotificationKey)).ToList();
+
+            var allCandidates = new List<WorkerNotification>(candidates);
+            if (policeCert != null && !known.Any(k => k.StartsWith("police-certificate:", StringComparison.Ordinal)))
+            {
+                var station = string.IsNullOrWhiteSpace(policeCert.IssuingStation) ? "Police Verification Portal" : policeCert.IssuingStation;
+                allCandidates.Add(New($"police-certificate:{workerId}:initial", "police-certificate", workerId,
+                    null, "Police character certificate verified", $"{station} verified your character certificate ({policeCert.CertificateNo})."));
+            }
+
+            var missing = allCandidates.Where(n => !known.Contains(n.NotificationKey)).ToList();
             if (missing.Count == 0) return;
             db.WorkerNotifications.AddRange(missing);
             try

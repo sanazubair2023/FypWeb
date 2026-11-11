@@ -26,12 +26,15 @@ namespace FypWeb.Controllers
             return $"/Images/{raw.TrimStart('/')}";
         }
 
-        // ── PORTAL (all workers + certification status) ─────────────────────────────
-        public async Task<IActionResult> Portal(string? searchCnic)
+        // ── PORTAL (RN PoliceVerificationPortal: Uncertified | Certified tabs + CNIC search) ──
+        public async Task<IActionResult> Portal(string? searchCnic, string tab = "uncertified")
         {
-            var query = _context.Workers.AsQueryable();
+            tab = (tab ?? "uncertified").Trim().ToLowerInvariant();
+            if (tab is not ("uncertified" or "certified" or "all")) tab = "uncertified";
+
+            var query = _context.Workers.AsNoTracking().AsQueryable();
             if (!string.IsNullOrWhiteSpace(searchCnic))
-                query = query.Where(w => w.Cnic != null && w.Cnic.Contains(searchCnic));
+                query = query.Where(w => w.Cnic != null && w.Cnic.Contains(searchCnic.Trim()));
 
             var workers = await query.Select(w => new
             {
@@ -39,15 +42,18 @@ namespace FypWeb.Controllers
                 Name = w.Name ?? "",
                 Cnic = w.Cnic ?? "",
                 w.Picture,
-                Category = _context.WorkerCategories.Where(wc => wc.WorkerId == w.WorkerId)
+                Category = _context.WorkerCategories
+                    .Where(wc => wc.WorkerId == w.WorkerId)
+                    .OrderByDescending(wc => wc.IsPrimary)
                     .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId, (wc, c) => c.CategoryName)
                     .FirstOrDefault(),
-                Cert = _context.PoliceRecords.Where(pr => pr.WorkerID == w.WorkerId && !pr.IsRevoked)
+                Cert = _context.PoliceRecords
+                    .Where(pr => pr.WorkerID == w.WorkerId && !pr.IsRevoked)
                     .OrderByDescending(pr => pr.IssuedDate)
                     .Select(pr => new { pr.ExpiryDate }).FirstOrDefault()
             }).ToListAsync();
 
-            var list = workers.Select(w =>
+            var allList = workers.Select(w =>
             {
                 bool isCertified = w.Cert != null && w.Cert.ExpiryDate > DateTime.Now;
                 return new PoliceWorkerVM
@@ -62,21 +68,29 @@ namespace FypWeb.Controllers
                 };
             }).ToList();
 
-            ViewBag.TotalResults = list.Count;
-            ViewBag.CertifiedCount = list.Count(x => x.IsCertified);
-            ViewBag.UncertifiedCount = list.Count(x => !x.IsCertified);
+            var filtered = tab switch
+            {
+                "certified" => allList.Where(x => x.IsCertified).ToList(),
+                "uncertified" => allList.Where(x => !x.IsCertified).ToList(),
+                _ => allList
+            };
+
+            ViewBag.TotalResults = allList.Count;
+            ViewBag.CertifiedCount = allList.Count(x => x.IsCertified);
+            ViewBag.UncertifiedCount = allList.Count(x => !x.IsCertified);
             ViewBag.SearchCnic = searchCnic;
-            return View(list);
+            ViewBag.ActiveTab = tab;
+            return View(filtered);
         }
 
         // ── WORKER DETAIL + ISSUE/RENEW CHARACTER CERTIFICATE ──────────────────────
         public async Task<IActionResult> WorkerDetail(int id)
         {
-            var worker = await _context.Workers.Where(w => w.WorkerId == id)
+            var worker = await _context.Workers.AsNoTracking().Where(w => w.WorkerId == id)
                 .Select(w => new { w.WorkerId, Name = w.Name ?? "", Cnic = w.Cnic ?? "", w.Picture }).FirstOrDefaultAsync();
             if (worker == null) return NotFound();
 
-            var cert = await _context.PoliceRecords
+            var cert = await _context.PoliceRecords.AsNoTracking()
                 .Where(pr => pr.WorkerID == id && !pr.IsRevoked)
                 .OrderByDescending(pr => pr.IssuedDate).FirstOrDefaultAsync();
 
@@ -94,9 +108,43 @@ namespace FypWeb.Controllers
                 IssuingStation = cert?.IssuingStation,
                 IssuingBadge = cert?.IssuingBadge,
                 IssuedDate = cert != null ? cert.IssuedDate.ToString("dd-MM-yyyy") : null,
-                ExpiryDate = cert != null ? cert.ExpiryDate.ToString("dd-MM-yyyy") : null
+                ExpiryDate = cert != null ? cert.ExpiryDate.ToString("dd-MM-yyyy") : null,
+                DaysUntilExpiry = cert != null ? (int)Math.Ceiling((cert.ExpiryDate.Date - DateTime.Now.Date).TotalDays) : null,
+                ViewerRole = "Police"
             };
             return View(vm);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> CharacterCertificate(int id)
+        {
+            var worker = await _context.Workers.AsNoTracking().Where(w => w.WorkerId == id)
+                .Select(w => new { w.WorkerId, Name = w.Name ?? "", Cnic = w.Cnic ?? "", w.Picture }).FirstOrDefaultAsync();
+            if (worker == null) return NotFound();
+
+            var cert = await _context.PoliceRecords.AsNoTracking()
+                .Where(pr => pr.WorkerID == id && !pr.IsRevoked)
+                .OrderByDescending(pr => pr.IssuedDate).FirstOrDefaultAsync();
+
+            var vm = new CharacterCertificateVM
+            {
+                WorkerId = worker.WorkerId,
+                Name = worker.Name,
+                Cnic = worker.Cnic,
+                Picture = CleanPic(worker.Picture),
+                HasValidCertificate = IsValid(cert),
+                Status = IsValid(cert) ? "Verified" : (cert != null ? "Expired" : "NotIssued"),
+                CertificateNo = cert?.CertificateNo,
+                CharacterStatus = cert?.CharacterStatus,
+                Remarks = cert?.Remarks,
+                IssuingStation = cert?.IssuingStation,
+                IssuingBadge = cert?.IssuingBadge,
+                IssuedDate = cert != null ? cert.IssuedDate.ToString("dd-MM-yyyy") : null,
+                ExpiryDate = cert != null ? cert.ExpiryDate.ToString("dd-MM-yyyy") : null,
+                DaysUntilExpiry = cert != null ? (int)Math.Ceiling((cert.ExpiryDate.Date - DateTime.Now.Date).TotalDays) : null,
+                ViewerRole = "Police"
+            };
+            return View("~/Views/Shared/CharacterCertificate.cshtml", vm);
         }
 
         private static string CnicDigits(string? value) => new((value ?? "").Where(char.IsDigit).ToArray());
@@ -115,8 +163,13 @@ namespace FypWeb.Controllers
             var worker = await _context.Workers.FindAsync(workerId);
             if (worker == null) { TempData["Error"] = "Worker does not exist."; return RedirectToAction("Portal"); }
 
-            if (CnicDigits(verifiedCnic).Length != 13 || CnicDigits(verifiedCnic) != CnicDigits(worker.Cnic))
-            { TempData["Error"] = "The entered CNIC does not match this worker's registered CNIC."; return RedirectToAction("WorkerDetail", new { id = workerId }); }
+            if (!string.IsNullOrWhiteSpace(verifiedCnic) &&
+                (CnicDigits(verifiedCnic).Length != 13 || CnicDigits(verifiedCnic) != CnicDigits(worker.Cnic)))
+            {
+                TempData["Error"] = "The entered CNIC does not match this worker's registered CNIC.";
+                return RedirectToAction("WorkerDetail", new { id = workerId });
+            }
+
             var officer = await _context.PoliceOfficers.FindAsync(PoliceId);
             if (officer == null) { TempData["Error"] = "Your police session is invalid. Please log in again."; return RedirectToAction("Portal"); }
 
@@ -143,6 +196,19 @@ namespace FypWeb.Controllers
             cert.IsRevoked = false;
 
             if (!isRenewal) _context.PoliceRecords.Add(cert);
+
+            var notificationVerb = isRenewal ? "renewed" : "issued";
+            _context.WorkerNotifications.Add(new WorkerNotification
+            {
+                WorkerId = worker.WorkerId,
+                NotificationKey = $"police-certificate:{worker.WorkerId}:{now.Ticks}",
+                Type = "police-certificate",
+                SourceId = worker.WorkerId,
+                Title = isRenewal ? "Character certificate renewed" : "Character certificate issued",
+                Message = $"Your police character certificate was {notificationVerb}. Certificate No. {cert.CertificateNo}; valid until {expiry:dd MMM yyyy}.",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 

@@ -1,18 +1,14 @@
-@* RN helpers/ReviewCard.js — shared review card.
-   Model: ReviewVM.
-   Optional ViewData:
-     "Accent"  — accent colour for name/border (default #3B82F6)
-     "Picture" — reviewer avatar URL (falls back to the initial) *@
+@* RN helpers/ReviewCard.js — shared review card with EndReason + Criteria + Selected Skills. *@
 @model ReviewVM
 @{
     var accent = ViewData["Accent"] as string ?? "#3B82F6";
     var pic = ViewData["Picture"] as string;
     var nameLink = ViewData["NameLink"] as string;
-    // RN onNamePress: a client reviewer's name opens the read-only client profile.
     if (string.IsNullOrEmpty(nameLink) && Model.ReviewerClientId is int clientId && clientId > 0)
         nameLink = Url.Action("ClientProfile", "Home", new { id = clientId });
-    var endKey = (Model.EndType ?? "").ToLowerInvariant();
-    string? badgeLabel = endKey == "terminated" ? "Terminated" : endKey == "resigned" ? "Resigned" : null;
+    var effectiveEndType = !string.IsNullOrWhiteSpace(Model.EndReasonType) ? Model.EndReasonType : Model.EndType;
+    var endKey = (effectiveEndType ?? "").ToLowerInvariant();
+    string? badgeLabel = endKey == "terminated" ? "Terminated" : (endKey == "resigned" || endKey == "resignationpending") ? "Resigned" : null;
     string badgeBg = badgeLabel == "Terminated" ? "#FEE2E2" : "#EDE9FE";
     string badgeFg = badgeLabel == "Terminated" ? "#DC2626" : "#6D28D9";
 }
@@ -61,7 +57,7 @@
         </div>
     }
 
-    <div class="d-flex align-items-center mb-1">
+    <div class="d-flex align-items-center mb-2">
         <span class="stars">
             @for (int i = 1; i <= 5; i++)
             {
@@ -71,10 +67,14 @@
         <span class="fw-bold ms-2" style="font-size:.82rem;color:#0F172A;">@Model.Rating.ToString("0.##")</span>
     </div>
 
+    <partial name="_ReviewEndReason" model="(effectiveEndType, Model.EndReason)" />
+
     @if (!string.IsNullOrWhiteSpace(Model.Comment))
     {
         <div style="font-size:.82rem;color:#475569;">@Model.Comment</div>
     }
 
     <partial name="_CriteriaBreakdown" model="Model.Criteria" />
+    <partial name="_CriteriaBreakdown" model="Model.SkillRatings"
+             view-data='new ViewDataDictionary(ViewData) { ["BreakdownTitle"] = "Selected skill ratings" }' />
 </div>

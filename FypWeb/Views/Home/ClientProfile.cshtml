@@ -5,7 +5,7 @@
 }
 
 <div class="d-flex align-items-center gap-2 mb-3">
-    <a asp-controller="Home" asp-action="Index" class="btn btn-outline-secondary btn-sm" title="Back to dashboard">
+    <a href="javascript:history.back()" class="btn btn-outline-secondary btn-sm" title="Go back">
         <i class="bi bi-arrow-left"></i>
     </a>
     <div>
@@ -88,6 +88,7 @@
                             {
                                 <div class="small text-muted mb-2"><i class="bi bi-briefcase me-1"></i>Worked: @review.WorkedPeriod</div>
                             }
+                            <partial name="_ReviewEndReason" model="(review.EndReasonType, review.EndReason)" />
                             @if (!string.IsNullOrWhiteSpace(review.Comment))
                             {
                                 <p class="mb-0" style="font-size:.82rem;color:#475569;">@review.Comment</p>

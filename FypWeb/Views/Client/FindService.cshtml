@@ -8,11 +8,15 @@
     var cats = q["categories"].ToList();
     var subs = q["subSkills"].ToList();
     var habitsSel = ViewBag.Habits as IEnumerable<dynamic> ?? Enumerable.Empty<dynamic>();
+    var allCategories = ViewBag.AllCategories as List<string> ?? new List<string>();
     bool anyFilter = !string.IsNullOrEmpty(gender) || !string.IsNullOrEmpty(city) || cats.Any() || subs.Any()
                      || q["habitIds"].Any();
 }
 
-<div class="page-head"><h1>Find a Worker</h1></div>
+<div class="page-head">
+    <h1>Find a Worker</h1>
+    <p>Browse verified domestic workers, filter by category or habits, and book an interview.</p>
+</div>
 
 <div class="card-soft mb-3">
     <div class="card-body">
@@ -46,14 +50,35 @@
             <div class="col-md-auto">
                 <a class="btn btn-outline-primary"
                    href="@Url.Action("Filter", "Client", new { gender, city, categories = cats.ToArray(), subSkills = subs.ToArray(), habitIds = q["habitIds"].ToArray() })">
-                    <i class="bi bi-funnel me-1"></i>Filter
+                    <i class="bi bi-funnel me-1"></i>Advanced Filter
                 </a>
             </div>
         </div>
 
+        <!-- Horizontal Category Quick-Filter Pills (RN ClientDashboardScreen parity) -->
+        @if (allCategories.Any())
+        {
+            <div class="d-flex gap-2 flex-nowrap overflow-auto pt-3 pb-1" id="quickCatBar">
+                <button type="button"
+                        class="btn btn-sm rounded-pill px-3 flex-shrink-0 @(!cats.Any() ? "btn-primary" : "btn-outline-secondary")"
+                        data-quickcat="">
+                    All Categories
+                </button>
+                @foreach (var catName in allCategories)
+                {
+                    var isActiveCat = cats.Any(x => string.Equals(x, catName, StringComparison.OrdinalIgnoreCase));
+                    <button type="button"
+                            class="btn btn-sm rounded-pill px-3 flex-shrink-0 @(isActiveCat ? "btn-primary" : "btn-outline-secondary")"
+                            data-quickcat="@catName">
+                        @catName
+                    </button>
+                }
+            </div>
+        }
+
         @if (anyFilter)
         {
-            <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+            <div class="d-flex flex-wrap align-items-center gap-2 mt-3 pt-2 border-top">
                 <span class="small text-muted fw-semibold">Active filters:</span>
                 @if (!string.IsNullOrEmpty(gender))
                 {
@@ -95,7 +120,7 @@
         <div class="empty-state">
             <i class="bi bi-search"></i>
             <h5 class="mt-3">No workers match your search</h5>
-            <p>Try adjusting your filters.</p>
+            <p>Try adjusting your category or filter options.</p>
         </div>
     </div>
 }
@@ -119,7 +144,7 @@ else
                                 <div class="wc-avatar-fallback">@FypWeb.Helpers.ViewHelpers.Initial(w.Name)</div>
                             }
                             <div class="flex-grow-1">
-                                <div class="d-flex align-items-center gap-2">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
                                     <span class="fw-bold">@w.Name</span>
                                     @if (w.IsPoliceVerified)
                                     {
@@ -160,6 +185,18 @@ else
 @section Scripts {
     <script>
         (function () {
+            document.querySelectorAll('[data-quickcat]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var cat = this.getAttribute('data-quickcat') || '';
+                    var p = new URLSearchParams(window.location.search);
+                    p.delete('categories');
+                    if (cat) {
+                        p.append('categories', cat);
+                    }
+                    window.location.href = window.location.pathname + (p.toString() ? '?' + p.toString() : '');
+                });
+            });
+
             document.querySelectorAll('[data-clear],[data-clearcat],[data-clearsub],[data-clearhabit]').forEach(function (a) {
                 a.addEventListener('click', function (e) {
                     e.preventDefault();

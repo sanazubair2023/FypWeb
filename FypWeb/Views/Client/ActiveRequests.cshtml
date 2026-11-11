@@ -1,11 +1,49 @@
 @model List<InterviewRequestVM>
 @{
-    ViewData["Title"] = "Active Requests";
+    ViewData["Title"] = "Interview List";
+    string tab = ViewBag.ActiveTab as string ?? "all";
+    string search = ViewBag.Search as string ?? "";
+    int allCount = ViewBag.AllCount ?? Model.Count;
+    int pendingCount = ViewBag.PendingTabCount ?? 0;
+    int approvedCount = ViewBag.ApprovedTabCount ?? 0;
 }
 
 <div class="page-head">
-    <h1>Active Requests</h1>
-    <p>Workers who accepted your interview. Approve to send them a formal job offer.</p>
+    <h1>Interview List</h1>
+    <p>Track pending invitations and send formal job offers once a worker accepts your interview.</p>
+</div>
+
+<!-- Tabs + Search (RN ActiveRequestScreen parity) -->
+<div class="card-soft mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-center">
+            <div class="col-lg-6 d-flex flex-wrap gap-2">
+                <a asp-action="ActiveRequests" asp-route-tab="all" asp-route-search="@search"
+                   class="btn btn-sm rounded-pill px-3 @(tab == "all" ? "btn-primary" : "btn-outline-secondary")">
+                    All (@allCount)
+                </a>
+                <a asp-action="ActiveRequests" asp-route-tab="pending" asp-route-search="@search"
+                   class="btn btn-sm rounded-pill px-3 @(tab == "pending" ? "btn-warning text-dark fw-semibold" : "btn-outline-secondary")">
+                    Pending (@pendingCount)
+                </a>
+                <a asp-action="ActiveRequests" asp-route-tab="approved" asp-route-search="@search"
+                   class="btn btn-sm rounded-pill px-3 @(tab == "approved" ? "btn-success" : "btn-outline-secondary")">
+                    Approved (@approvedCount)
+                </a>
+            </div>
+            <div class="col-lg-6">
+                <form method="get" asp-action="ActiveRequests" class="d-flex gap-2">
+                    <input type="hidden" name="tab" value="@tab" />
+                    <input type="text" name="search" value="@search" class="form-control form-control-sm" placeholder="Search by worker, category, or skill…" />
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i></button>
+                    @if (!string.IsNullOrWhiteSpace(search))
+                    {
+                        <a asp-action="ActiveRequests" asp-route-tab="@tab" class="btn btn-sm btn-outline-secondary">Reset</a>
+                    }
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 @if (!Model.Any())
@@ -13,8 +51,8 @@
     <div class="card-soft">
         <div class="empty-state">
             <i class="bi bi-hourglass"></i>
-            <h5 class="mt-3">No active requests</h5>
-            <p>When a worker accepts your interview invitation, they'll appear here.</p>
+            <h5 class="mt-3">No interview requests found</h5>
+            <p>Book an interview from a worker's profile to get started.</p>
             <a asp-action="FindService" class="btn btn-primary">Find a Worker</a>
         </div>
     </div>
@@ -26,9 +64,9 @@ else
         {
             var pic = FypWeb.Helpers.ViewHelpers.Pic(r.OtherPartyPicture);
             <div class="col-md-6">
-                <div class="card-soft">
-                    <div class="card-body">
-                        <div class="d-flex gap-3 align-items-center">
+                <div class="card-soft h-100">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex gap-3 align-items-start">
                             @if (pic != null)
                             {
                                 <img src="@pic" class="avatar-round" alt="@r.OtherPartyName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
@@ -39,34 +77,90 @@ else
                                 <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
                             }
                             <div class="flex-grow-1">
-                                <div class="fw-bold">@r.OtherPartyName</div>
-                                <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
-                                <div class="text-muted small"><i class="bi bi-clock me-1"></i>@r.Time</div>
-                                <span class="chip chip-blue mt-1">@r.JobType</span>
-                                <span class="chip chip-green mt-1">Interview accepted</span>
+                                <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                    <a asp-action="WorkerDetail" asp-route-id="@r.OtherPartyId" class="fw-bold text-dark text-decoration-none">
+                                        @r.OtherPartyName
+                                    </a>
+                                    <span class="chip @r.BadgeClass">@r.BadgeLabel</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(r.CategoryName))
+                                {
+                                    <div class="small text-brand fw-semibold">@r.CategoryName</div>
+                                }
+                                <div class="text-muted small mt-1"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
+                                <div class="text-muted small"><i class="bi bi-calendar-event me-1"></i>@r.Time</div>
+                                <div class="d-flex flex-wrap gap-1 mt-2">
+                                    <span class="chip chip-blue">@r.JobType</span>
+                                    @if (r.JobType == "Part-Time" && !string.IsNullOrEmpty(r.SlotStart))
+                                    {
+                                        <span class="chip chip-gray"><i class="bi bi-clock me-1"></i>@r.SlotStart – @r.SlotEnd</span>
+                                    }
+                                    @if (r.IsResidenceProvided == true)
+                                    {
+                                        <span class="chip chip-gray"><i class="bi bi-house-door me-1"></i>Residence</span>
+                                    }
+                                </div>
                             </div>
                         </div>
+
+                        @if (r.SelectedSkills != null && r.SelectedSkills.Any())
+                        {
+                            <div class="mt-3 pt-2 border-top">
+                                <div class="text-muted" style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Selected Skills</div>
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    @foreach (var sk in r.SelectedSkills)
+                                    {
+                                        <span class="badge rounded-pill" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #DBEAFE;font-weight:600;">
+                                            @sk
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
                         @if (r.IsExclusive && r.JobType == "Full-Time")
                         {
                             <div class="alert py-2 px-3 small mt-3 mb-0" style="background:#FFF7ED;border:1px solid #FDBA74;color:#7C2D12;border-radius:10px;">
                                 <div class="fw-bold" style="color:#9A3412;"><i class="bi bi-lock-fill me-1"></i>Exclusive full-time request</div>
-                                <div class="mt-1">If you confirm hiring, the worker agrees not to accept other full-time work until submitting a resignation or the contract is terminated. Sending this job offer alone does not activate the restriction.</div>
+                                <div class="mt-1">Exclusivity activates once final hiring is confirmed.</div>
                             </div>
                         }
-                        <hr />
-                        <div class="d-flex gap-2">
-                            <form asp-action="CreateHiring" method="post" class="flex-grow-1">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="interviewId" value="@r.InterviewId" />
-                                <input type="hidden" name="address" value="@r.Location" />
-                                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2-circle me-1"></i>Send Job Offer</button>
-                            </form>
-                            <form asp-action="WithdrawRequest" method="post" onsubmit="return confirm('Withdraw this request?');">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="interviewId" value="@r.InterviewId" />
-                                <button type="submit" class="btn btn-outline-danger"><i class="bi bi-x-lg"></i></button>
-                            </form>
-                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(r.StatusHint))
+                        {
+                            <div class="small text-muted mt-3">@r.StatusHint</div>
+                        }
+
+                        @if (r.CanApprove || r.CanDelete)
+                        {
+                            <div class="mt-auto pt-2">
+                                <hr class="my-2" />
+                                <div class="d-flex gap-2">
+                                    @if (r.CanApprove)
+                                    {
+                                        <form asp-action="CreateHiring" method="post" class="flex-grow-1">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="interviewId" value="@r.InterviewId" />
+                                            <input type="hidden" name="address" value="@r.Location" />
+                                            <button type="submit" class="btn btn-primary w-100">
+                                                <i class="bi bi-check2-circle me-1"></i>Approve &amp; Send Job Offer
+                                            </button>
+                                        </form>
+                                    }
+                                    @if (r.CanDelete)
+                                    {
+                                        <form asp-action="DeleteInterview" method="post" class="@(r.CanApprove ? "" : "ms-auto")"
+                                              onsubmit="return confirm('Cancel and remove this interview request?');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="interviewId" value="@r.InterviewId" />
+                                            <button type="submit" class="btn @(r.CanApprove ? "btn-outline-danger" : "btn-sm btn-outline-danger")" title="Remove request">
+                                                <i class="bi bi-trash@(r.CanApprove ? "" : " me-1")"></i>@(r.CanApprove ? "" : "Cancel Request")
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </div>
+                        }
                     </div>
                 </div>
             </div>

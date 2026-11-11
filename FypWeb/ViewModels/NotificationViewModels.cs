@@ -9,6 +9,10 @@ public sealed class WorkerNotificationVM
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? ReadAtUtc { get; set; }
     public string? DestinationUrl { get; set; }
+    public string BadgeLabel { get; set; } = "Alert";
+    public string BadgeIcon { get; set; } = "bi-bell";
+    public string BadgeColor { get; set; } = "#475569";
+    public string BadgeBackground { get; set; } = "#F1F5F9";
     public bool IsRead => ReadAtUtc.HasValue;
 }
 
@@ -16,6 +20,7 @@ public sealed class WorkerNotificationPageVM
 {
     public List<WorkerNotificationVM> Items { get; set; } = new();
     public int UnreadCount { get; set; }
+    public int TotalCount { get; set; }
     public int Skip { get; set; }
     public int Take { get; set; }
     public bool HasMore { get; set; }

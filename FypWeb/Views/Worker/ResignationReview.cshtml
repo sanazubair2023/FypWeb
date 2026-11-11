@@ -3,9 +3,15 @@
     ViewData["Title"] = "Resignation & Review";
 }
 
-<div class="d-flex gap-2 mb-3">
+<div class="d-flex flex-wrap gap-2 mb-3">
     <a asp-action="Notifications" class="btn btn-outline-secondary btn-sm"><i class="bi bi-bell me-1"></i>Notifications</a>
     <a asp-action="Dashboard" class="btn btn-outline-secondary btn-sm"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a>
+    @if (Model.IsAccepted && Model.InterviewId > 0)
+    {
+        <a asp-action="ContractSummary" asp-route-interviewId="@Model.InterviewId" class="btn btn-outline-primary btn-sm ms-auto">
+            <i class="bi bi-file-earmark-text me-1"></i>Contract Exit Summary
+        </a>
+    }
 </div>
 
 <div class="row g-3">

@@ -67,8 +67,6 @@ namespace FypWeb.Controllers
         public async Task<IActionResult> ClientProfile(int id)
         {
             var role = User.GetRole();
-            if (role == "Worker" && !await _context.Interviews.AnyAsync(i => i.ClientId == id && i.WorkerId == User.GetId()))
-                return Forbid();
             if (role is not ("Client" or "Worker")) return Forbid();
             var client = await _context.Clients.AsNoTracking()
                 .FirstOrDefaultAsync(c => c.ClientId == id);
@@ -89,7 +87,7 @@ namespace FypWeb.Controllers
                     ReviewerPicture = r.Interview.Worker != null ? r.Interview.Worker.Picture : null
                 }).ToListAsync();
 
-            // Worked period on every review: Hiring_Date -> Termination / Resignation date.
+            // Worked period + end reason on every review: Hiring_Date -> Termination / Resignation date.
             var windows = await ReviewHelpers.LoadContractWindowsAsync(_context,
                 reviewRows.Where(x => x.InterviewId.HasValue).Select(x => x.InterviewId!.Value).Distinct().ToList(),
                 reviewRows.Where(x => x.InterviewId.HasValue)
@@ -114,7 +112,9 @@ namespace FypWeb.Controllers
                         Rating = r.Rating,
                         Comment = r.Comment,
                         Date = r.ReviewDate != null ? r.ReviewDate.Value.ToString("dd MMM yyyy") : "N/A",
-                        WorkedPeriod = ReviewHelpers.FormatWorkedPeriod(w.From, w.To)
+                        WorkedPeriod = ReviewHelpers.FormatWorkedPeriod(w.From, w.To),
+                        EndReasonType = w.EndReasonType,
+                        EndReason = w.EndReason
                     };
                 }).ToList()
             };

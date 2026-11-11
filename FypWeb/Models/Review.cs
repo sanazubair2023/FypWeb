@@ -26,4 +26,6 @@ public partial class Review
     public virtual Interview? Interview { get; set; }
 
     public virtual ICollection<ReviewCriteriaRating> ReviewCriteriaRatings { get; set; } = new List<ReviewCriteriaRating>();
+
+    public virtual ICollection<ReviewSkillRating> ReviewSkillRatings { get; set; } = new List<ReviewSkillRating>();
 }

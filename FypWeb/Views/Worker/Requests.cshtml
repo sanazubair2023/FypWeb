@@ -1,11 +1,12 @@
 @model List<InterviewRequestVM>
 @{
     ViewData["Title"] = "Interview Requests";
+    int? highlightId = ViewBag.HighlightId as int?;
 }
 
 <div class="page-head">
     <h1>Interview Requests</h1>
-    <p>Clients who want to interview you. Accept or decline below.</p>
+    <p>Review client details, required skills, and schedule before accepting or declining.</p>
 </div>
 
 @if (!Model.Any())
@@ -24,10 +25,11 @@ else
         @foreach (var r in Model)
         {
             var pic = FypWeb.Helpers.ViewHelpers.Pic(r.OtherPartyPicture);
+            bool isHighlighted = r.IsHighlighted || (highlightId.HasValue && highlightId.Value == r.InterviewId);
             <div class="col-md-6">
-                <div class="card-soft">
-                    <div class="card-body">
-                        <div class="d-flex gap-3">
+                <div class="card-soft h-100" style="@(isHighlighted ? "border:2px solid #2563EB;box-shadow:0 0 0 4px rgba(37,99,235,.10);" : "")">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex gap-3 align-items-start">
                             @if (pic != null)
                             {
                                 <img src="@pic" class="avatar-round" alt="@r.OtherPartyName" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
@@ -38,47 +40,99 @@ else
                                 <div class="avatar-round-fallback">@FypWeb.Helpers.ViewHelpers.Initial(r.OtherPartyName)</div>
                             }
                             <div class="flex-grow-1">
-                                @if (r.OtherPartyId > 0)
+                                <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                    @if (r.OtherPartyId > 0)
+                                    {
+                                        <a asp-controller="Home" asp-action="ClientProfile" asp-route-id="@r.OtherPartyId"
+                                           class="fw-bold text-decoration-underline" style="color:#1E64D3;">@r.OtherPartyName</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="fw-bold">@r.OtherPartyName</span>
+                                    }
+
+                                    @if (r.OtherPartyRating > 0 && r.OtherPartyReviewCount > 0)
+                                    {
+                                        <span class="badge rounded-pill" style="background:#FEF3C7;color:#92400E;font-weight:700;">
+                                            <i class="bi bi-star-fill text-warning me-1"></i>@r.OtherPartyRating.ToString("F1") (@r.OtherPartyReviewCount)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge rounded-pill bg-light text-muted border">New Client</span>
+                                    }
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(r.OtherPartyPhone))
                                 {
-                                    <a asp-controller="Home" asp-action="ClientProfile" asp-route-id="@r.OtherPartyId"
-                                       class="fw-bold text-decoration-underline d-block" style="color:#1E64D3;">@r.OtherPartyName</a>
-                                }
-                                else
-                                {
-                                    <div class="fw-bold">@r.OtherPartyName</div>
+                                    <div class="text-muted small mt-1"><i class="bi bi-telephone me-1 text-brand"></i>@r.OtherPartyPhone</div>
                                 }
                                 <div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>@r.Location</div>
-                                <div class="text-muted small"><i class="bi bi-clock me-1"></i>@r.Time</div>
-                                <div class="mt-1">
+                                <div class="text-muted small"><i class="bi bi-calendar-event me-1"></i>@r.Time</div>
+
+                                <div class="d-flex flex-wrap gap-1 mt-2">
                                     <span class="chip chip-blue">@r.JobType</span>
+                                    @if (r.JobType == "Part-Time" && !string.IsNullOrEmpty(r.SlotStart))
+                                    {
+                                        <span class="chip chip-gray"><i class="bi bi-clock me-1"></i>@r.SlotStart – @r.SlotEnd</span>
+                                    }
                                     @if (r.JobType == "Full-Time" && r.IsResidenceProvided == true)
                                     {
-                                        <span class="chip chip-green">Residence provided</span>
+                                        <span class="chip chip-green"><i class="bi bi-house-door me-1"></i>Residence provided</span>
                                     }
                                 </div>
                             </div>
                         </div>
+
+                        @if (r.SelectedSkills != null && r.SelectedSkills.Any())
+                        {
+                            <div class="mt-3 pt-2 border-top">
+                                <div class="text-muted" style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Requested Skills</div>
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    @foreach (var sk in r.SelectedSkills)
+                                    {
+                                        <span class="badge rounded-pill" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #DBEAFE;font-weight:600;">
+                                            @sk
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
                         @if (r.IsExclusive && r.JobType == "Full-Time")
                         {
                             <div class="alert py-2 px-3 small mt-3 mb-0" style="background:#FFF7ED;border:1px solid #FDBA74;color:#7C2D12;border-radius:10px;">
                                 <div class="fw-bold" style="color:#9A3412;"><i class="bi bi-lock-fill me-1"></i>Exclusive full-time request</div>
-                                <div class="mt-1">If the client confirms hiring, you agree not to accept other full-time work until you submit a resignation or the contract is terminated. Accepting this interview request alone does not activate the restriction.</div>
+                                <div class="mt-1">If the client confirms hiring, you agree not to accept other full-time work until resignation submission or termination.</div>
                             </div>
                         }
-                        <hr />
-                        <div class="d-flex gap-2">
-                            <form asp-action="DecideInterview" method="post" class="flex-grow-1">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="id" value="@r.InterviewId" />
-                                <input type="hidden" name="decision" value="Accepted" />
-                                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Accept</button>
-                            </form>
-                            <form asp-action="DecideInterview" method="post" class="flex-grow-1" onsubmit="return confirm('Decline this interview?');">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="id" value="@r.InterviewId" />
-                                <input type="hidden" name="decision" value="Rejected" />
-                                <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-lg me-1"></i>Decline</button>
-                            </form>
+
+                        <div class="mt-auto pt-3">
+                            <hr class="my-2" />
+                            @if (r.CanRespond)
+                            {
+                                <div class="d-flex gap-2">
+                                    <form asp-action="DecideInterview" method="post" class="flex-grow-1">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.InterviewId" />
+                                        <input type="hidden" name="decision" value="Accepted" />
+                                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Accept</button>
+                                    </form>
+                                    <form asp-action="DecideInterview" method="post" class="flex-grow-1" onsubmit="return confirm('Decline this interview?');">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@r.InterviewId" />
+                                        <input type="hidden" name="decision" value="Rejected" />
+                                        <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-x-lg me-1"></i>Decline</button>
+                                    </form>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <span class="small text-muted">Historical interview record</span>
+                                    <span class="chip chip-gray">@r.Status</span>
+                                </div>
+                            }
                         </div>
                     </div>
                 </div>

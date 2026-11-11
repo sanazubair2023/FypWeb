@@ -13,7 +13,7 @@
     <a class="nav-link @active("Client", "Dashboard")" asp-controller="Client" asp-action="Dashboard"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
     <a class="nav-link @active("Client", "FindService")" asp-controller="Client" asp-action="FindService"><i class="bi bi-search"></i><span>Find a Worker</span></a>
     <a class="nav-link @active("Client", "Location")" asp-controller="Client" asp-action="Location"><i class="bi bi-geo-alt-fill"></i><span>Map &amp; Location</span></a>
-    <a class="nav-link @active("Client", "ActiveRequests")" asp-controller="Client" asp-action="ActiveRequests"><i class="bi bi-hourglass-split"></i><span>Active Requests</span></a>
+    <a class="nav-link @active("Client", "ActiveRequests")" asp-controller="Client" asp-action="ActiveRequests"><i class="bi bi-hourglass-split"></i><span>Interview List</span></a>
     <a class="nav-link @active("Client", "WorkerDecisions")" asp-controller="Client" asp-action="WorkerDecisions"><i class="bi bi-clipboard-check"></i><span>Hiring Decisions</span></a>
     <a class="nav-link @active("Client", "Resignations")" asp-controller="Client" asp-action="Resignations"><i class="bi bi-file-earmark-person"></i><span>Resignations</span></a>
     <a class="nav-link @active("Client", "Profile")" asp-controller="Client" asp-action="Profile"><i class="bi bi-person-circle"></i><span>My Profile</span></a>
@@ -27,7 +27,9 @@ else if (role == "Worker")
     <a class="nav-link @active("Worker", "JobConfirmations")" asp-controller="Worker" asp-action="JobConfirmations"><i class="bi bi-briefcase-fill"></i><span>Job Offers</span></a>
     <a class="nav-link @active("Worker", "Habits")" asp-controller="Worker" asp-action="Habits"><i class="bi bi-stars"></i><span>My Habits</span></a>
     <a class="nav-link @active("Worker", "Courses")" asp-controller="Worker" asp-action="Courses"><i class="bi bi-mortarboard"></i><span>Browse Courses</span></a>
-    <a class="nav-link @active("Worker", "MyCourses")" asp-controller="Worker" asp-action="MyCourses"><i class="bi bi-award"></i><span>My Learning</span></a>
+    <a class="nav-link @active("Worker", "MyCourses")" asp-controller="Worker" asp-action="MyCourses"><i class="bi bi-journal-check"></i><span>My Learning</span></a>
+    <a class="nav-link @active("Worker", "WorkerCertificates")" asp-controller="Worker" asp-action="WorkerCertificates"><i class="bi bi-patch-check-fill"></i><span>My Certificates</span></a>
+    <a class="nav-link @active("Worker", "CharacterCertificate")" asp-controller="Worker" asp-action="CharacterCertificate"><i class="bi bi-shield-check"></i><span>Police Certificate</span></a>
     <a class="nav-link @active("Worker", "Location")" asp-controller="Worker" asp-action="Location"><i class="bi bi-geo-alt-fill"></i><span>My Location</span></a>
     <a class="nav-link @active("Worker", "LeaveJob")" asp-controller="Worker" asp-action="LeaveJob"><i class="bi bi-door-open"></i><span>Leave Job</span></a>
     <a class="nav-link @active("Worker", "Termination")" asp-controller="Worker" asp-action="Termination"><i class="bi bi-exclamation-octagon"></i><span>Termination</span></a>
@@ -36,7 +38,7 @@ else if (role == "Company")
 {
     <a class="nav-link @active("Company", "Dashboard")" asp-controller="Company" asp-action="Dashboard"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
     <a class="nav-link @active("Company", "Courses")" asp-controller="Company" asp-action="Courses"><i class="bi bi-mortarboard"></i><span>Course Management</span></a>
-   // <a class="nav-link @active("Company", "Directory")" asp-controller="Company" asp-action="Directory"><i class="bi bi-people-fill"></i><span>Worker Directory</span></a>
+    <a class="nav-link @active("Company", "Directory")" asp-controller="Company" asp-action="Directory"><i class="bi bi-people-fill"></i><span>Worker Directory</span></a>
 }
 else if (role == "Police")
 {

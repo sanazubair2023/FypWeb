@@ -50,7 +50,8 @@
     </div>
     <div class="col-6 col-lg-3">
         <a asp-action="WorkerDecisions" class="qa-card" style="--qa-bg:#E6FFFA;--qa-fg:#2C7A7B;">
-            <div class="qa-icon"><i class="bi bi-briefcase"></i>@if (pendingJobRequests > 0) {
+            <div class="qa-icon">
+                <i class="bi bi-briefcase"></i>@if (pendingJobRequests > 0) {
                 <span class="qa-dot"></span>
             }
         </div>
@@ -60,7 +61,8 @@
 </div>
 <div class="col-6 col-lg-3">
     <a asp-action="Resignations" class="qa-card" style="--qa-bg:#FFF5F5;--qa-fg:#C53030;">
-        <div class="qa-icon"><i class="bi bi-box-arrow-right"></i>@if (pendingResignations > 0) {
+        <div class="qa-icon">
+            <i class="bi bi-box-arrow-right"></i>@if (pendingResignations > 0) {
             <span class="qa-dot"></span>
         }
     </div>

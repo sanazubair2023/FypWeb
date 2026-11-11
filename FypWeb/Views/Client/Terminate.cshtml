@@ -4,8 +4,10 @@
     string workerName = ViewBag.WorkerName as string ?? "Worker";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(ViewBag.WorkerPicture as string);
     var groups = ViewBag.CriteriaGroups as List<CriteriaGroupVM> ?? new List<CriteriaGroupVM>();
+    var selectedSkills = ViewBag.SelectedSkills as List<SelectedSkillInputVM> ?? new List<SelectedSkillInputVM>();
     int totalCriteria = groups.Sum(g => g.Items.Count);
     int idx = 0;
+    int sIdx = 0;
 }
 
 <a asp-action="Dashboard" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to dashboard</a>
@@ -25,7 +27,7 @@
                         <div class="avatar-round-fallback mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(workerName)</div>
                     }
                     <h5 class="fw-bold mt-2 mb-0">Terminate @workerName</h5>
-                    <p class="text-muted small">This ends the contract permanently.</p>
+                    <p class="text-muted small">Ends the contract immediately and records your verified closing review.</p>
                 </div>
 
                 <div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>This action cannot be undone.</div>
@@ -35,7 +37,7 @@
                     <input type="hidden" name="interviewId" value="@interviewId" />
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Reason for termination</label>
+                        <label class="form-label fw-semibold">Reason for termination <span class="text-danger">*</span></label>
                         <select name="reason" class="form-select" required>
                             <option value="">Select a reason</option>
                             <option>Unsatisfactory performance</option>
@@ -49,16 +51,14 @@
                     @if (totalCriteria == 0)
                     {
                         <div class="alert alert-warning py-2 small mb-3">
-                            <i class="bi bi-info-circle me-1"></i>No review criteria are configured yet — the closing review needs at
-                            least one active row in <strong>ReviewCriteria</strong>. Run <code>DbScripts/DetailReviews.sql</code>
-                            (it seeds the common criteria), then reload this page.
+                            <i class="bi bi-info-circle me-1"></i>No review criteria are configured yet — run <code>Database/FypWeb_SharedDb_Migration.sql</code> or seed <strong>ReviewCriteria</strong>, then reload this page.
                         </div>
                     }
                     else
                     {
                         <div class="mb-3">
-                            <label class="form-label fw-semibold d-block">Rate the following <span class="text-danger">*</span></label>
-                            <div class="text-muted small mb-1">The overall rating is calculated from these scores.</div>
+                            <label class="form-label fw-semibold d-block">Common Criteria <span class="text-danger">*</span></label>
+                            <div class="text-muted small mb-1">Rate general conduct, reliability, and communication (1–5 stars).</div>
                             @foreach (var g in groups)
                             {
                                 <div class="crit-group-title">@g.GroupName</div>
@@ -81,13 +81,43 @@
                         </div>
                     }
 
+                    @if (selectedSkills.Any())
+                    {
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold d-block">Rate Hired Job Skills <span class="text-danger">*</span></label>
+                            <div class="text-muted small mb-1">Rate each skill selected when booking this contract (combined with Common Criteria for the overall rating).</div>
+                            <div class="crit-group-title" style="color:#0F766E;">HIRED SKILLS</div>
+                            @foreach (var sk in selectedSkills)
+                            {
+                                <div class="crit-row">
+                                    <input type="hidden" name="skillScores[@sIdx].SkillsId" value="@sk.SkillsId" />
+                                    <div>
+                                        <span class="crit-name fw-semibold">@sk.Name</span>
+                                        @if (!string.IsNullOrWhiteSpace(sk.CategoryName))
+                                        {
+                                            <span class="text-muted ms-1" style="font-size:.74rem;">(@sk.CategoryName)</span>
+                                        }
+                                    </div>
+                                    <span class="crit-stars" data-sidx="@sIdx">
+                                        @for (int s = 1; s <= 5; s++)
+                                        {
+                                            <input type="radio" class="d-none" name="skillScores[@sIdx].Score" value="@s" id="sk_@(sIdx)_@(s)" required="@(s == 1)" />
+                                            <label for="sk_@(sIdx)_@(s)" class="crit-star" title="@s star@((s > 1) ? "s" : "")"><i class="bi bi-star"></i></label>
+                                        }
+                                    </span>
+                                </div>
+                                sIdx++;
+                            }
+                        </div>
+                    }
+
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Remarks (optional)</label>
                         <textarea name="remarks" class="form-control" rows="3" placeholder="Add additional remarks/feedback"></textarea>
                     </div>
 
                     <button type="submit" class="btn btn-danger w-100" onclick="return confirm('Terminate this contract?');">
-                        <i class="bi bi-x-octagon me-1"></i>Terminate Contract
+                        <i class="bi bi-x-octagon me-1"></i>Terminate Contract &amp; Submit Review
                     </button>
                 </form>
             </div>
@@ -139,8 +169,6 @@
 
 @section Scripts {
     <script>
-        // Paint the stars for each criterion row when a score is picked
-        // (same UX as the RN CriteriaReviewSection star rows).
         document.querySelectorAll('.crit-stars input[type="radio"]').forEach(function (r) {
             r.addEventListener('change', function () {
                 var wrap = this.closest('.crit-stars');

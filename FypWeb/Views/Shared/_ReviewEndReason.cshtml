@@ -1,0 +1,32 @@
+﻿@* RN helpers/ReviewEndReason.js — separates contract ending reason from reviewer comment.
+   Model: (string? EndType, string? Reason) *@
+@model (string? EndType, string? Reason)
+@{
+    var cleanReason = Model.Reason?.Trim();
+    var key = (Model.EndType ?? "").Trim().ToLowerInvariant();
+    string label = key == "terminated" ? "Termination reason"
+                 : (key == "resigned" || key == "resignationpending") ? "Resignation reason"
+                 : "Contract end reason";
+    string bg = key == "terminated" ? "#FEF2F2"
+              : (key == "resigned" || key == "resignationpending") ? "#FFFBEB"
+              : "#F8FAFC";
+    string border = key == "terminated" ? "#FECACA"
+                  : (key == "resigned" || key == "resignationpending") ? "#FDE68A"
+                  : "#E2E8F0";
+    string accent = key == "terminated" ? "#B91C1C"
+                  : (key == "resigned" || key == "resignationpending") ? "#B45309"
+                  : "#475569";
+    string icon = key == "terminated" ? "bi-file-earmark-x"
+                : (key == "resigned" || key == "resignationpending") ? "bi-file-earmark-person"
+                : "bi-file-earmark-text";
+}
+@if (!string.IsNullOrWhiteSpace(cleanReason))
+{
+    <div class="rounded-3 p-2 mb-2" style="background:@bg;border:1px solid @border;">
+        <div class="d-flex align-items-center gap-1 mb-1">
+            <i class="bi @icon" style="font-size:.76rem;color:@accent;"></i>
+            <span class="fw-bold" style="font-size:.7rem;color:@accent;letter-spacing:.2px;">@label</span>
+        </div>
+        <div style="font-size:.79rem;color:#334155;line-height:1.4;">@cleanReason</div>
+    </div>
+}

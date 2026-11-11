@@ -72,7 +72,7 @@
             <div class="d-flex flex-wrap gap-2" id="habitRow">
                 @foreach (var h in habits)
                 {
-                    <button type="button" class="chip chip-select" data-id="@h.HabitId" data-name="@h.Name">
+                    <button type="button" class="chip chip-select" data-id="@h.HabitId" data-name="@h.Name" data-group="@(h.ExclusiveGroup ?? "")">
                         <i class="bi bi-star me-1"></i>@h.Name
                     </button>
                 }
@@ -134,7 +134,7 @@
             var city = '@Html.Raw(System.Text.Encodings.Web.JavaScriptEncoder.Default.Encode(city))';
             var cats = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(selCats));
             var subs = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(selSubs));
-            var habitsSel = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(selHabits));
+            var habitsSel = (@Html.Raw(System.Text.Json.JsonSerializer.Serialize(selHabits)) || []).map(String);
             var subCache = {};
             var catButtons = Array.prototype.slice.call(document.querySelectorAll('#catRow button'));
 
@@ -159,7 +159,22 @@
             function toggleHabit(id) {
                 id = String(id);
                 var i = habitsSel.indexOf(id);
-                if (i >= 0) habitsSel.splice(i, 1); else habitsSel.push(id);
+                if (i >= 0) {
+                    habitsSel.splice(i, 1);
+                } else {
+                    var clickedBtn = document.querySelector('#habitRow button[data-id="' + id + '"]');
+                    var grp = clickedBtn ? (clickedBtn.getAttribute('data-group') || '').trim() : '';
+                    if (grp) {
+                        document.querySelectorAll('#habitRow button').forEach(function (other) {
+                            if ((other.getAttribute('data-group') || '').trim().toLowerCase() === grp.toLowerCase()) {
+                                var oid = String(other.getAttribute('data-id'));
+                                var idx = habitsSel.indexOf(oid);
+                                if (idx >= 0) habitsSel.splice(idx, 1);
+                            }
+                        });
+                    }
+                    habitsSel.push(id);
+                }
                 paint();
             }
 

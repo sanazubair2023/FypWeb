@@ -38,102 +38,25 @@ namespace FypWeb.Controllers
 
         private int WorkerId => User.GetId();
 
-        // ── DASHBOARD ─────────────────────────────────────────────────────────────
+        // ── DASHBOARD (RN WorkerDashboardScreen) ──────────────────────────────────
         public async Task<IActionResult> Dashboard()
         {
             int workerId = WorkerId;
+            await _workflow.ProcessDueAsync(workerId: workerId);
+
             var worker = await _context.Workers.Include(w => w.Experiences)
                 .FirstOrDefaultAsync(w => w.WorkerId == workerId);
             if (worker == null) return NotFound();
 
-            var catNames = await _context.WorkerCategories
-                .Where(wc => wc.WorkerId == workerId)
-                .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId, (wc, c) => c.CategoryName)
-                .Where(n => !string.IsNullOrEmpty(n)).Distinct().ToListAsync();
-
-            // Skills tab data (RN WorkerDashboardScreen): primary category = the
-            // first junction row's category; its skills are "primary skills",
-            // every other category groups as secondary/part-time services.
-            var junctionRows = await (
-                from wc in _context.WorkerCategories.Where(wc => wc.WorkerId == workerId)
-                join c in _context.Categories on wc.CategoryId equals c.CategoryId into cg
-                from c in cg.DefaultIfEmpty()
-                join s in _context.Skills on wc.SkillsId equals s.SkillsId into sg
-                from s in sg.DefaultIfEmpty()
-                select new { CategoryId = wc.CategoryId, wc.IsPrimary, CategoryName = c != null ? c.CategoryName : "", SkillName = s != null ? s.SkillName : "" }
-                ).ToListAsync();
-
-            string primaryRole = "General Worker";
-            var primarySkills = new List<string>();
-            var partTimeSkills = new List<PartTimeSkillGroupVM>();
-            int? primaryCatId = junctionRows.Where(r => r.IsPrimary).Select(r => (int?)r.CategoryId).FirstOrDefault()
-                ?? junctionRows.Select(r => (int?)r.CategoryId).FirstOrDefault();
-            if (primaryCatId.HasValue)
-            {
-                var primaryName = junctionRows.Where(r => r.CategoryId == primaryCatId.Value)
-                    .Select(r => r.CategoryName).FirstOrDefault();
-                if (!string.IsNullOrEmpty(primaryName)) primaryRole = primaryName;
-                primarySkills = junctionRows.Where(r => r.CategoryId == primaryCatId.Value && !string.IsNullOrEmpty(r.SkillName))
-                    .Select(r => r.SkillName!).Distinct().ToList();
-                partTimeSkills = junctionRows.Where(r => r.CategoryId != primaryCatId.Value)
-                    .GroupBy(r => r.CategoryName)
-                    .Select(g => new PartTimeSkillGroupVM
-                    {
-                        CategoryName = string.IsNullOrEmpty(g.Key) ? "Additional Service" : g.Key,
-                        Skills = g.Where(x => !string.IsNullOrEmpty(x.SkillName)).Select(x => x.SkillName!).Distinct().ToList()
-                    }).ToList();
-            }
+            var skillSummary = await ReviewHelpers.LoadWorkerSkillBreakdownAsync(_context, workerId);
 
             var slots = await _context.WorkerTimeSlots.Where(s => s.WorkerId == workerId && s.IsActive)
                 .OrderBy(s => s.StartTime)
                 .Select(s => new SlotVM { Id = s.Id, StartTime = s.StartTime.ToString(@"hh\:mm"), EndTime = s.EndTime.ToString(@"hh\:mm") })
                 .ToListAsync();
 
-            // Reviews OF this worker, written BY clients — the card shows the
-            // client's name next to each review (RN ReviewCard reviewerName).
-            // Detail reviews: per-criterion breakdown + how the contract ended.
-            var reviewRows = await _context.Reviews
-                .Where(r => r.Interview != null && r.Interview.WorkerId == workerId && r.ReviewerRole == "Client")
-                .OrderByDescending(r => r.ReviewDate)
-                .Select(r => new
-                {
-                    r.InterviewId,
-                    ClientId = r.Interview!.ClientId,
-                    Rating = r.Rating ?? 0m,
-                    r.Comment,
-                    ReviewerName = r.Interview!.Client != null ? r.Interview.Client.Name : "Anonymous",
-                    r.ReviewDate,
-                    EndType = r.Interview.Status,
-                    Criteria = r.ReviewCriteriaRatings
-                        .OrderBy(c => c.Criteria.SortOrder).ThenBy(c => c.CriteriaId)
-                        .Select(c => new CriteriaScoreVM { Name = c.Criteria.CriteriaName, Score = c.Score })
-                        .ToList()
-                }).ToListAsync();
+            var reviews = await LoadMyReviewsAsync(workerId);
 
-            // "Worked: …" line on each review card — the contract window behind
-            // the interview (hire date → termination/resignation date).
-            var reviewWindows = await LoadContractWindowsAsync(
-                reviewRows.Where(r => r.InterviewId.HasValue).Select(r => r.InterviewId!.Value).Distinct().ToList(),
-                reviewRows.Where(r => r.InterviewId.HasValue)
-                    .GroupBy(r => r.InterviewId!.Value)
-                    .ToDictionary(g => g.Key, g => g.Max(r => r.ReviewDate)));
-
-            var reviews = reviewRows.Select(r => new ReviewVM
-            {
-                ReviewerId = r.ClientId,
-                ReviewerClientId = r.ClientId,
-                Rating = r.Rating,
-                Comment = r.Comment,
-                ReviewerRole = "Client",
-                ReviewerName = r.ReviewerName ?? "Anonymous",
-                ReviewDate = r.ReviewDate != null ? r.ReviewDate.Value.ToString("dd MMM yyyy") : "",
-                WorkedPeriod = r.InterviewId.HasValue && reviewWindows.TryGetValue(r.InterviewId.Value, out var w)
-                    ? FormatWorkedPeriod(w.From, w.To) : null,
-                EndType = r.EndType,
-                Criteria = r.Criteria
-            }).ToList();
-
-            // Overview counters (RN WorkerDashboardScreen notification cards).
             int pendingRequestCount = await _context.Interviews
                 .CountAsync(i => i.WorkerId == workerId && i.Status == "Pending" && (i.WorkerDecision == null || i.WorkerDecision == "Pending"));
             int jobNotificationCount = await _context.Hiring
@@ -141,8 +64,39 @@ namespace FypWeb.Controllers
             int terminationCount = await _context.Interviews
                 .CountAsync(i => i.WorkerId == workerId && i.Status == "Terminated");
 
+            // Pending post-resignation Worker -> Client reviews (RN Rate your client card)
+            var pendingClientReviews = await _context.Resignations.AsNoTracking()
+                .Where(r => r.Interview != null && r.Interview.WorkerId == workerId &&
+                            r.Interview.Status == "Resigned" &&
+                            (r.AcceptedAtUtc != null || r.NoticeEndsAtUtc == null) &&
+                            !_context.Reviews.Any(review => review.InterviewId == r.InterviewId &&
+                                                            review.ReviewerRole == "Worker"))
+                .OrderByDescending(r => r.AcceptedAtUtc)
+                .ThenByDescending(r => r.SubmittedDate)
+                .ThenByDescending(r => r.ResignationId)
+                .Select(r => new PendingClientReviewItemVM
+                {
+                    ResignationId = r.ResignationId,
+                    InterviewId = r.InterviewId,
+                    ClientName = r.Interview!.Client != null ? r.Interview.Client.Name : "Client",
+                    ClientPicture = r.Interview.Client != null ? r.Interview.Client.Picture : null,
+                    AcceptedAtUtc = r.AcceptedAtUtc
+                })
+                .ToListAsync();
+
+            var policeCert = await _context.PoliceRecords.AsNoTracking()
+                .Where(pr => pr.WorkerID == workerId && !pr.IsRevoked)
+                .OrderByDescending(pr => pr.IssuedDate)
+                .FirstOrDefaultAsync();
+            bool policeValid = policeCert != null && policeCert.ExpiryDate > DateTime.Now;
+
+            int certCount = await _context.WorkerCertifications.CountAsync(c => c.WorkerID == workerId)
+                          + await _context.CourseCertificates.CountAsync(c => c.WorkerID == workerId && !c.IsRevoked);
+
             var habits = await _context.WorkerHabits
-                .Where(wh => wh.WorkerId == workerId && wh.Habit != null)
+                .Where(wh => wh.WorkerId == workerId && wh.Habit != null && wh.Habit.IsActive)
+                .OrderBy(wh => wh.Habit!.SortOrder)
+                .ThenBy(wh => wh.Habit!.Name)
                 .Select(wh => wh.Habit!.Name).ToListAsync();
 
             var vm = new WorkerDashboardVM
@@ -155,7 +109,7 @@ namespace FypWeb.Controllers
                 Picture = worker.Picture,
                 Gender = worker.Gender,
                 Age = worker.Age,
-                Salary = worker.Salary != null ? "Rs." + worker.Salary.ToString() : "Not Set",
+                Salary = worker.Salary != null ? $"Rs.{worker.Salary:0}" : "Not Set",
                 Bio = worker.Bio,
                 AvailableStatus = worker.AvailableStatus ?? true,
                 Radius = worker.Radius,
@@ -163,153 +117,388 @@ namespace FypWeb.Controllers
                 Longitude = worker.Longitude,
                 Rating = reviews.Any() ? Math.Round(reviews.Average(r => (double)r.Rating), 1) : 0.0,
                 ReviewCount = reviews.Count,
-                Categories = catNames,
+                Categories = skillSummary.Categories,
                 Experiences = worker.Experiences.Select(e => new ExperienceVM { WorkAt = e.WorkAt, ExpDetail = e.ExpDetail, Duration = e.Duration }).ToList(),
                 Slots = slots,
                 Reviews = reviews,
                 Habits = habits,
-                PrimaryRole = primaryRole,
-                PrimarySkills = primarySkills,
-                PartTimeSkills = partTimeSkills,
+                PrimaryRole = skillSummary.PrimaryRole,
+                PrimarySkills = skillSummary.PrimarySkills,
+                PrimaryCategoryAverageRating = skillSummary.PrimaryCategoryAverageRating,
+                PrimaryCategoryRatingCount = skillSummary.PrimaryCategoryRatingCount,
+                PrimarySkillRatings = skillSummary.PrimarySkillRatings,
+                PartTimeSkills = skillSummary.PartTimeSkills,
                 PendingRequestCount = pendingRequestCount,
                 JobNotificationCount = jobNotificationCount,
-                TerminationCount = terminationCount
+                TerminationCount = terminationCount,
+                PendingClientReviews = pendingClientReviews,
+                PoliceCertStatus = policeValid ? "Verified" : (policeCert != null ? "Expired" : "NotIssued"),
+                PoliceCertNo = policeCert?.CertificateNo,
+                PoliceExpiryDate = policeCert != null ? policeCert.ExpiryDate.ToString("dd MMM yyyy") : null,
+                TotalCertificateCount = certCount
             };
             return View(vm);
         }
 
-        // ── CONTRACT WINDOW (port of api Dashboard LoadContractWindowsAsync) ────────
-        // start = Hiring.HiringDate (falls back to Interview.InterviewDate)
-        // end   = Termination.TerminatedDate, else Resignation.LastWorkingDate
-        //        (falls back to Resignation.SubmittedDate, then the review date)
-        private async Task<Dictionary<int, (DateTime? From, DateTime? To)>> LoadContractWindowsAsync(
-            List<int> interviewIds, Dictionary<int, DateTime?> fallbackEndDates)
+        private async Task<List<ReviewVM>> LoadMyReviewsAsync(int workerId)
         {
-            var windows = new Dictionary<int, (DateTime? From, DateTime? To)>();
-            if (interviewIds == null || interviewIds.Count == 0) return windows;
+            var reviewRows = await _context.Reviews.AsNoTracking()
+                .Where(r => r.Interview != null && r.Interview.WorkerId == workerId && r.ReviewerRole == "Client")
+                .OrderByDescending(r => r.ReviewDate)
+                .ThenByDescending(r => r.ReviewId)
+                .Select(r => new
+                {
+                    r.InterviewId,
+                    ClientId = r.Interview!.ClientId,
+                    Rating = r.Rating ?? 0m,
+                    r.Comment,
+                    ReviewerName = r.Interview!.Client != null ? r.Interview.Client.Name : "Anonymous",
+                    r.ReviewDate,
+                    EndType = r.Interview.Status,
+                    Criteria = r.ReviewCriteriaRatings
+                        .OrderBy(c => c.Criteria.SortOrder).ThenBy(c => c.CriteriaId)
+                        .Select(c => new CriteriaScoreVM { Name = c.Criteria.CriteriaName, Score = c.Score })
+                        .ToList(),
+                    SkillRatings = r.ReviewSkillRatings
+                        .OrderBy(s => s.Skill.SkillName).ThenBy(s => s.SkillsId)
+                        .Select(s => new CriteriaScoreVM { Name = s.Skill.SkillName ?? "Skill", Score = s.Score })
+                        .ToList()
+                }).ToListAsync();
 
-            var hireDates = (await _context.Hiring
-                .Where(h => h.InterviewId != null && interviewIds.Contains(h.InterviewId.Value))
-                .Select(h => new { InterviewId = h.InterviewId!.Value, h.HiringDate })
-                .ToListAsync())
-                .GroupBy(x => x.InterviewId)
-                .ToDictionary(g => g.Key, g => g.Min(x => x.HiringDate));
+            var reviewWindows = await ReviewHelpers.LoadContractWindowsAsync(_context,
+                reviewRows.Where(r => r.InterviewId.HasValue).Select(r => r.InterviewId!.Value).Distinct().ToList(),
+                reviewRows.Where(r => r.InterviewId.HasValue)
+                    .GroupBy(r => r.InterviewId!.Value)
+                    .ToDictionary(g => g.Key, g => g.Max(r => r.ReviewDate)));
 
-            var interviewDates = (await _context.Interviews
-                .Where(i => interviewIds.Contains(i.InterviewId))
-                .Select(i => new { i.InterviewId, i.InterviewDate })
-                .ToListAsync())
-                .ToDictionary(x => x.InterviewId, x => x.InterviewDate);
-
-            var resignations = await _context.Resignations
-                .Where(r => r.InterviewId != null && interviewIds.Contains(r.InterviewId.Value))
-                .Select(r => new { InterviewId = r.InterviewId!.Value, r.SubmittedDate, r.LastWorkingDate })
-                .ToListAsync();
-
-            var terminations = await _context.Terminations
-                .Where(t => t.InterviewId != null && interviewIds.Contains(t.InterviewId.Value))
-                .Select(t => new { InterviewId = t.InterviewId!.Value, t.TerminatedDate })
-                .ToListAsync();
-
-            foreach (var id in interviewIds.Distinct())
+            return reviewRows.Select(r =>
             {
-                DateTime? from = hireDates.TryGetValue(id, out var hireDate) ? hireDate : null;
-                if (from == null && interviewDates.TryGetValue(id, out var interviewDate)) from = interviewDate;
+                var hasWin = reviewWindows.TryGetValue(r.InterviewId ?? 0, out var w);
+                return new ReviewVM
+                {
+                    ReviewerId = r.ClientId,
+                    ReviewerClientId = r.ClientId,
+                    Rating = r.Rating,
+                    Comment = r.Comment,
+                    ReviewerRole = "Client",
+                    ReviewerName = r.ReviewerName ?? "Anonymous",
+                    ReviewDate = r.ReviewDate != null ? r.ReviewDate.Value.ToString("dd MMM yyyy") : "",
+                    WorkedPeriod = hasWin ? ReviewHelpers.FormatWorkedPeriod(w.From, w.To) : null,
+                    EndType = r.EndType,
+                    EndReasonType = hasWin ? w.EndReasonType : null,
+                    EndReason = hasWin ? w.EndReason : null,
+                    Criteria = r.Criteria,
+                    SkillRatings = r.SkillRatings
+                };
+            }).ToList();
+        }
 
-                DateTime? to = null;
+        // ── READ-ONLY POLICE CHARACTER CERTIFICATE (RN CharacterCertificateScreen) ──
+        [HttpGet]
+        public async Task<IActionResult> CharacterCertificate()
+        {
+            int workerId = WorkerId;
+            var worker = await _context.Workers.AsNoTracking()
+                .Where(w => w.WorkerId == workerId)
+                .Select(w => new { w.WorkerId, Name = w.Name ?? "Worker", Cnic = w.Cnic ?? "", w.Picture })
+                .FirstOrDefaultAsync();
+            if (worker == null) return NotFound();
 
-                var termination = terminations
-                    .Where(t => t.InterviewId == id && t.TerminatedDate != null)
+            var cert = await _context.PoliceRecords.AsNoTracking()
+                .Where(pr => pr.WorkerID == workerId && !pr.IsRevoked)
+                .OrderByDescending(pr => pr.IssuedDate)
+                .FirstOrDefaultAsync();
+
+            bool valid = cert != null && cert.ExpiryDate > DateTime.Now;
+            var vm = new CharacterCertificateVM
+            {
+                WorkerId = worker.WorkerId,
+                Name = worker.Name,
+                Cnic = worker.Cnic,
+                Picture = worker.Picture,
+                HasValidCertificate = valid,
+                Status = valid ? "Verified" : (cert != null ? "Expired" : "NotIssued"),
+                CertificateNo = cert?.CertificateNo,
+                CharacterStatus = cert?.CharacterStatus,
+                Remarks = cert?.Remarks,
+                IssuingStation = cert?.IssuingStation,
+                IssuingBadge = cert?.IssuingBadge,
+                IssuedDate = cert != null ? cert.IssuedDate.ToString("dd MMM yyyy") : null,
+                ExpiryDate = cert != null ? cert.ExpiryDate.ToString("dd MMM yyyy") : null,
+                DaysUntilExpiry = cert != null ? (int)Math.Ceiling((cert.ExpiryDate.Date - DateTime.Now.Date).TotalDays) : null,
+                ViewerRole = "Worker"
+            };
+            return View("~/Views/Shared/CharacterCertificate.cshtml", vm);
+        }
+
+        // ── VERIFIED CERTIFICATES LIST & RECORD DETAIL (RN WorkerCertificationDetail) ──
+        [HttpGet]
+        public async Task<IActionResult> WorkerCertificates()
+        {
+            int workerId = WorkerId;
+            var worker = await _context.Workers.AsNoTracking()
+                .Where(w => w.WorkerId == workerId)
+                .Select(w => new { w.WorkerId, Name = w.Name ?? "Worker", w.Picture })
+                .FirstOrDefaultAsync();
+            if (worker == null) return NotFound();
+
+            var vm = new WorkerCertificateListVM
+            {
+                WorkerId = worker.WorkerId,
+                WorkerName = worker.Name,
+                WorkerPicture = worker.Picture,
+                ViewerRole = "Worker",
+                Certificates = await ReviewHelpers.LoadWorkerCertificatesAsync(_context, workerId)
+            };
+            return View("~/Views/Shared/WorkerCertificates.cshtml", vm);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> WorkerCertificateRecord(string type, int certId)
+        {
+            int workerId = WorkerId;
+            var all = await ReviewHelpers.LoadWorkerCertificatesAsync(_context, workerId);
+            var record = all.FirstOrDefault(c =>
+                c.CertificateId == certId &&
+                string.Equals(c.CertificateType, type, StringComparison.OrdinalIgnoreCase));
+            if (record == null) return NotFound();
+            ViewBag.ViewerRole = "Worker";
+            return View("~/Views/Shared/WorkerCertificateRecord.cshtml", record);
+        }
+
+        // ── STANDALONE RATINGS & REVIEWS (RN Worker/RatingAndReviewsScreen) ─────────
+        [HttpGet]
+        public async Task<IActionResult> Reviews()
+        {
+            int workerId = WorkerId;
+            var worker = await _context.Workers.AsNoTracking()
+                .Where(w => w.WorkerId == workerId)
+                .Select(w => new { w.WorkerId, Name = w.Name ?? "Worker", w.Picture })
+                .FirstOrDefaultAsync();
+            if (worker == null) return NotFound();
+
+            var reviews = await LoadMyReviewsAsync(workerId);
+            var skillSummary = await ReviewHelpers.LoadWorkerSkillBreakdownAsync(_context, workerId);
+
+            var vm = new RatingsAndReviewsPageVM
+            {
+                WorkerId = worker.WorkerId,
+                WorkerName = worker.Name,
+                WorkerPicture = worker.Picture,
+                WorkerRole = skillSummary.PrimaryRole,
+                AverageRating = reviews.Any() ? Math.Round(reviews.Average(r => (double)r.Rating), 1) : 0.0,
+                ReviewCount = reviews.Count,
+                ViewerRole = "Worker",
+                Reviews = reviews
+            };
+            return View("~/Views/Shared/RatingsAndReviews.cshtml", vm);
+        }
+
+        // ── CONTRACT EXIT SUMMARY (RN WorkerTerminatedScreen) ─────────────────────
+        [HttpGet]
+        public async Task<IActionResult> ContractSummary(int? interviewId = null)
+        {
+            int workerId = WorkerId;
+            var query = _context.Interviews.AsNoTracking()
+                .Include(i => i.Client)
+                .Include(i => i.Worker)
+                .Where(i => i.WorkerId == workerId && (i.Status == "Terminated" || i.Status == "Resigned"));
+            if (interviewId.HasValue)
+                query = query.Where(i => i.InterviewId == interviewId.Value);
+
+            var interview = await query
+                .OrderByDescending(i => i.InterviewId)
+                .FirstOrDefaultAsync();
+            if (interview == null) return NotFound();
+
+            string reason = "No details specified";
+            string dateStr = "N/A";
+            if (interview.Status == "Terminated")
+            {
+                var term = await _context.Terminations.AsNoTracking()
+                    .Where(t => t.InterviewId == interview.InterviewId)
                     .OrderByDescending(t => t.TerminatedDate)
-                    .FirstOrDefault();
-                if (termination != null)
+                    .FirstOrDefaultAsync();
+                if (term != null)
                 {
-                    to = termination.TerminatedDate!.Value.ToDateTime(TimeOnly.MinValue);
+                    reason = term.TerminatedReason ?? "No reason specified";
+                    if (term.TerminatedDate.HasValue)
+                        dateStr = term.TerminatedDate.Value.ToString("dd MMM yyyy");
                 }
-                else
+            }
+            else if (interview.Status == "Resigned")
+            {
+                var res = await _context.Resignations.AsNoTracking()
+                    .Where(r => r.InterviewId == interview.InterviewId)
+                    .OrderByDescending(r => r.SubmittedDate)
+                    .FirstOrDefaultAsync();
+                if (res != null)
                 {
-                    var resignation = resignations
-                        .Where(r => r.InterviewId == id)
-                        .OrderByDescending(r => r.SubmittedDate)
-                        .FirstOrDefault();
-                    if (resignation != null)
-                    {
-                        to = resignation.LastWorkingDate != default
-                            ? resignation.LastWorkingDate.ToDateTime(TimeOnly.MinValue)
-                            : resignation.SubmittedDate;
-                    }
+                    reason = res.ResignationReason ?? "No reason specified";
+                    dateStr = res.AcceptedAtUtc?.ToString("dd MMM yyyy")
+                           ?? res.SubmittedDate?.ToString("dd MMM yyyy")
+                           ?? "N/A";
                 }
-
-                if (to == null && fallbackEndDates != null && fallbackEndDates.TryGetValue(id, out var reviewDate))
-                    to = reviewDate;
-
-                if (from != null || to != null) windows[id] = (from, to);
             }
 
-            return windows;
+            var workerSkill = await _context.WorkerCategories.AsNoTracking()
+                .Where(wc => wc.WorkerId == workerId)
+                .OrderByDescending(wc => wc.IsPrimary)
+                .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId, (wc, c) => c.CategoryName)
+                .FirstOrDefaultAsync() ?? "Worker";
+
+            var vm = new ContractExitSummaryVM
+            {
+                InterviewId = interview.InterviewId,
+                WorkerId = workerId,
+                Status = interview.Status ?? "Terminated",
+                Date = dateStr,
+                Reason = reason,
+                WorkerName = interview.Worker?.Name ?? "Worker",
+                WorkerPicture = interview.Worker?.Picture,
+                WorkerPhone = interview.Worker?.Phone ?? "N/A",
+                WorkerAddress = interview.Worker?.Address ?? "N/A",
+                WorkerSkill = workerSkill,
+                ClientName = interview.Client?.Name ?? "Client",
+                ClientPicture = interview.Client?.Picture,
+                ClientAddress = interview.Client?.Address ?? "N/A",
+                ViewerRole = "Worker"
+            };
+            return View("~/Views/Shared/ContractSummary.cshtml", vm);
         }
 
-        private static string? FormatWorkedSpan(DateTime? from, DateTime? to)
-        {
-            if (from == null || to == null) return null;
-            var f = from.Value.Date;
-            var t = to.Value.Date;
-            if (t < f) t = f;
-            return f.Year == t.Year
-                ? $"{f:dd MMM} – {t:dd MMM yyyy}"
-                : $"{f:dd MMM yyyy} – {t:dd MMM yyyy}";
-        }
-
-        private static string? FormatWorkedPeriod(DateTime? from, DateTime? to)
-        {
-            var span = FormatWorkedSpan(from, to);
-            if (span == null || from == null || to == null) return null;
-            var days = (to.Value.Date - from.Value.Date).Days;
-            if (days < 0) days = 0;
-            return span + (days <= 1 ? " (1 day)" : $" ({days} days)");
-        }
-
-        // ── INTERVIEW REQUESTS (pending) ──────────────────────────────────────────
+        // ── INTERVIEW REQUESTS (RN ActiveRequestsScreen: rating + phone + slot + skills + historical view) ──
         public async Task<IActionResult> Requests(int? interviewId)
         {
             int workerId = WorkerId;
-            var pending = await _context.Interviews
+            var primaryRole = await _context.WorkerCategories.AsNoTracking()
+                .Where(wc => wc.WorkerId == workerId)
+                .OrderByDescending(wc => wc.IsPrimary)
+                .Join(_context.Categories, wc => wc.CategoryId, c => c.CategoryId, (wc, c) => c.CategoryName)
+                .FirstOrDefaultAsync() ?? "Service Request";
+
+            var rows = await _context.Interviews.AsNoTracking()
                 .Include(i => i.Client)
-                .Where(i => i.WorkerId == workerId && i.Status == "Pending" && (i.WorkerDecision == null || i.WorkerDecision == "Pending") && (!interviewId.HasValue || i.InterviewId == interviewId.Value))
-                .Select(i => new InterviewRequestVM
+                .Include(i => i.Slot)
+                .Where(i => i.WorkerId == workerId &&
+                            ((i.Status == "Pending" && (i.WorkerDecision == null || i.WorkerDecision == "Pending")) ||
+                             (interviewId.HasValue && i.InterviewId == interviewId.Value)))
+                .OrderByDescending(i => interviewId.HasValue && i.InterviewId == interviewId.Value)
+                .ThenByDescending(i => i.InterviewId)
+                .Select(i => new
                 {
-                    InterviewId = i.InterviewId,
-                    OtherPartyId = i.Client != null ? i.Client.ClientId : 0,
-                    OtherPartyName = i.Client != null ? i.Client.Name : "Client",
-                    OtherPartyPicture = i.Client != null ? i.Client.Picture : null,
-                    Location = i.Address ?? "N/A",
-                    Time = i.InterviewDate != null ? i.InterviewDate.Value.ToString("MMM dd, hh:mm tt") : "Not Set",
-                    Status = i.Status ?? "",
+                    i.InterviewId,
+                    ClientId = i.Client != null ? i.Client.ClientId : 0,
+                    ClientName = i.Client != null ? i.Client.Name : "Client",
+                    ClientPicture = i.Client != null ? i.Client.Picture : null,
+                    ClientPhone = i.Client != null ? i.Client.Phone : null,
+                    i.Address,
+                    i.InterviewDate,
+                    Status = i.Status ?? "Pending",
+                    WorkerDecision = i.WorkerDecision ?? "Pending",
                     JobType = i.JobType ?? "Full-Time",
-                    IsResidenceProvided = i.IsResidenceProvided,
-                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time"
+                    i.IsResidenceProvided,
+                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time",
+                    SlotStart = i.Slot != null ? (TimeSpan?)i.Slot.StartTime : null,
+                    SlotEnd = i.Slot != null ? (TimeSpan?)i.Slot.EndTime : null
                 }).ToListAsync();
-            return View(pending);
+
+            var clientIds = rows.Where(r => r.ClientId > 0).Select(r => r.ClientId).Distinct().ToList();
+            var clientRatings = (await _context.Reviews.AsNoTracking()
+                .Where(r => r.ReviewerRole == "Worker" && r.Interview != null &&
+                            r.Interview.ClientId != null && clientIds.Contains(r.Interview.ClientId.Value))
+                .Select(r => new { ClientId = r.Interview!.ClientId!.Value, Rating = (double)(r.Rating ?? 0m) })
+                .ToListAsync())
+                .GroupBy(x => x.ClientId)
+                .ToDictionary(g => g.Key, g => (Avg: Math.Round(g.Average(x => x.Rating), 1), Count: g.Count()));
+
+            var skillsMap = await ReviewHelpers.LoadSelectedSkillsLookupAsync(
+                _context, rows.Select(r => r.InterviewId));
+
+            var list = rows.Select(r =>
+            {
+                clientRatings.TryGetValue(r.ClientId, out var ratingInfo);
+                skillsMap.TryGetValue(r.InterviewId, out var skills);
+                bool actionable = r.Status == "Pending" && (string.IsNullOrEmpty(r.WorkerDecision) || r.WorkerDecision == "Pending");
+                return new InterviewRequestVM
+                {
+                    InterviewId = r.InterviewId,
+                    OtherPartyId = r.ClientId,
+                    OtherPartyName = r.ClientName,
+                    OtherPartyPicture = r.ClientPicture,
+                    OtherPartyPhone = r.ClientPhone,
+                    OtherPartyRating = ratingInfo.Avg,
+                    OtherPartyReviewCount = ratingInfo.Count,
+                    CategoryName = primaryRole,
+                    Location = r.Address ?? "N/A",
+                    Time = r.InterviewDate != null ? r.InterviewDate.Value.ToString("dd MMM yyyy, hh:mm tt") : "Not Set",
+                    Status = r.Status,
+                    WorkerDecision = r.WorkerDecision,
+                    JobType = r.JobType,
+                    IsResidenceProvided = r.IsResidenceProvided,
+                    IsExclusive = r.IsExclusive,
+                    SlotStart = r.SlotStart.HasValue ? DateTime.Today.Add(r.SlotStart.Value).ToString("hh:mm tt") : null,
+                    SlotEnd = r.SlotEnd.HasValue ? DateTime.Today.Add(r.SlotEnd.Value).ToString("hh:mm tt") : null,
+                    SelectedSkills = skills ?? new List<string>(),
+                    CanRespond = actionable,
+                    IsHighlighted = interviewId.HasValue && r.InterviewId == interviewId.Value
+                };
+            }).ToList();
+
+            ViewBag.HighlightInterviewId = interviewId;
+            return View(list);
         }
 
         public async Task<IActionResult> AcceptedRequests()
         {
             int workerId = WorkerId;
-            var accepted = await _context.Interviews
+            var rows = await _context.Interviews.AsNoTracking()
                 .Include(i => i.Client)
+                .Include(i => i.Slot)
                 .Where(i => i.WorkerId == workerId && i.WorkerDecision == "Accepted" && i.Status == "Pending")
-                .Select(i => new InterviewRequestVM
+                .OrderByDescending(i => i.InterviewId)
+                .Select(i => new
                 {
-                    InterviewId = i.InterviewId,
-                    OtherPartyId = i.Client != null ? i.Client.ClientId : 0,
-                    OtherPartyName = i.Client != null ? i.Client.Name : "Client",
-                    OtherPartyPicture = i.Client != null ? i.Client.Picture : null,
-                    Location = i.Address ?? "N/A",
-                    Time = i.InterviewDate != null ? i.InterviewDate.Value.ToString("MMM dd, hh:mm tt") : "Not Set",
-                    Status = i.Status ?? "",
+                    i.InterviewId,
+                    ClientId = i.Client != null ? i.Client.ClientId : 0,
+                    ClientName = i.Client != null ? i.Client.Name : "Client",
+                    ClientPicture = i.Client != null ? i.Client.Picture : null,
+                    ClientPhone = i.Client != null ? i.Client.Phone : null,
+                    i.Address,
+                    i.InterviewDate,
+                    Status = i.Status ?? "Pending",
                     JobType = i.JobType ?? "Full-Time",
-                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time"
+                    i.IsResidenceProvided,
+                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time",
+                    SlotStart = i.Slot != null ? (TimeSpan?)i.Slot.StartTime : null,
+                    SlotEnd = i.Slot != null ? (TimeSpan?)i.Slot.EndTime : null
                 }).ToListAsync();
+
+            var skillsMap = await ReviewHelpers.LoadSelectedSkillsLookupAsync(
+                _context, rows.Select(r => r.InterviewId));
+
+            var accepted = rows.Select(r =>
+            {
+                skillsMap.TryGetValue(r.InterviewId, out var skills);
+                return new InterviewRequestVM
+                {
+                    InterviewId = r.InterviewId,
+                    OtherPartyId = r.ClientId,
+                    OtherPartyName = r.ClientName,
+                    OtherPartyPicture = r.ClientPicture,
+                    OtherPartyPhone = r.ClientPhone,
+                    Location = r.Address ?? "N/A",
+                    Time = r.InterviewDate != null ? r.InterviewDate.Value.ToString("dd MMM yyyy, hh:mm tt") : "Not Set",
+                    Status = r.Status,
+                    JobType = r.JobType,
+                    IsResidenceProvided = r.IsResidenceProvided,
+                    IsExclusive = r.IsExclusive,
+                    SlotStart = r.SlotStart.HasValue ? DateTime.Today.Add(r.SlotStart.Value).ToString("hh:mm tt") : null,
+                    SlotEnd = r.SlotEnd.HasValue ? DateTime.Today.Add(r.SlotEnd.Value).ToString("hh:mm tt") : null,
+                    SelectedSkills = skills ?? new List<string>()
+                };
+            }).ToList();
+
             return View(accepted);
         }
 
@@ -326,32 +515,68 @@ namespace FypWeb.Controllers
             if (!canAccept && !canReject) { TempData["Error"] = "This interview is no longer awaiting that decision."; return RedirectToAction("Requests"); }
             interview.WorkerDecision = decision;
             if (decision == "Rejected") interview.Status = "Rejected";
-            await _context.SaveChangesAsync(); await transaction.CommitAsync();
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             TempData["Success"] = $"Interview {decision.ToLowerInvariant()}.";
-            return RedirectToAction("Requests");
+            return decision == "Accepted" ? RedirectToAction("AcceptedRequests") : RedirectToAction("Requests");
         }
 
         // ── JOB CONFIRMATIONS (offers) ────────────────────────────────────────────
         public async Task<IActionResult> JobConfirmations(int? hiringId)
         {
             int workerId = WorkerId;
-            var jobs = await _context.Hiring
+            var rows = await _context.Hiring.AsNoTracking()
                 .Include(h => h.Interview).ThenInclude(i => i!.Client)
-                .Where(h => h.Interview!.WorkerId == workerId && (!hiringId.HasValue || h.HiringId == hiringId.Value))
-                .Select(h => new InterviewRequestVM
+                .Include(h => h.Interview).ThenInclude(i => i!.Slot)
+                .Where(h => h.Interview != null && h.Interview.WorkerId == workerId && (!hiringId.HasValue || h.HiringId == hiringId.Value))
+                .OrderByDescending(h => h.HiringId)
+                .Select(h => new
                 {
                     InterviewId = h.InterviewId ?? 0,
-                    HiringId = h.HiringId,
-                    OtherPartyId = h.Interview!.Client != null ? h.Interview.Client.ClientId : 0,
-                    OtherPartyName = h.Interview.Client != null ? h.Interview.Client.Name : "Client",
-                    OtherPartyPicture = h.Interview.Client != null ? h.Interview.Client.Picture : null,
-                    Location = h.Address ?? "N/A",
+                    h.HiringId,
+                    ClientId = h.Interview!.Client != null ? h.Interview.Client.ClientId : 0,
+                    ClientName = h.Interview.Client != null ? h.Interview.Client.Name : "Client",
+                    ClientPicture = h.Interview.Client != null ? h.Interview.Client.Picture : null,
+                    ClientPhone = h.Interview.Client != null ? h.Interview.Client.Phone : null,
+                    Location = h.Address ?? h.Interview.Address ?? "N/A",
                     JobType = h.Interview.JobType ?? "Full-Time",
                     IsExclusive = h.Interview.IsExclusive && h.Interview.JobType == "Full-Time",
                     Status = h.Interview.Status ?? "",
                     HiringWorkerDecision = h.WorkerDecision ?? "Pending",
-                    HiringDecision = h.HiringDecision ?? "Pending"
+                    HiringDecision = h.HiringDecision ?? "Pending",
+                    SlotStart = h.Interview.Slot != null ? (TimeSpan?)h.Interview.Slot.StartTime : null,
+                    SlotEnd = h.Interview.Slot != null ? (TimeSpan?)h.Interview.Slot.EndTime : null,
+                    h.HiringDate
                 }).ToListAsync();
+
+            var skillsMap = await ReviewHelpers.LoadSelectedSkillsLookupAsync(
+                _context, rows.Where(r => r.InterviewId > 0).Select(r => r.InterviewId));
+
+            var jobs = rows.Select(r =>
+            {
+                skillsMap.TryGetValue(r.InterviewId, out var skills);
+                return new InterviewRequestVM
+                {
+                    InterviewId = r.InterviewId,
+                    HiringId = r.HiringId,
+                    OtherPartyId = r.ClientId,
+                    OtherPartyName = r.ClientName,
+                    OtherPartyPicture = r.ClientPicture,
+                    OtherPartyPhone = r.ClientPhone,
+                    Location = r.Location,
+                    JobType = r.JobType,
+                    IsExclusive = r.IsExclusive,
+                    Status = r.Status,
+                    HiringWorkerDecision = r.HiringWorkerDecision,
+                    HiringDecision = r.HiringDecision,
+                    SlotStart = r.SlotStart.HasValue ? DateTime.Today.Add(r.SlotStart.Value).ToString("hh:mm tt") : null,
+                    SlotEnd = r.SlotEnd.HasValue ? DateTime.Today.Add(r.SlotEnd.Value).ToString("hh:mm tt") : null,
+                    HiringDate = r.HiringDate?.ToString("dd MMM yyyy"),
+                    SelectedSkills = skills ?? new List<string>(),
+                    IsHighlighted = hiringId.HasValue && r.HiringId == hiringId.Value
+                };
+            }).ToList();
+
             return View(jobs);
         }
 
@@ -370,39 +595,52 @@ namespace FypWeb.Controllers
             { TempData["Error"] = "This offer has already been decided or is no longer active."; return RedirectToAction("JobConfirmations"); }
             hiring.WorkerDecision = decision;
             if (decision == "Rejected") interview.Status = "JobRejected";
-            await _context.SaveChangesAsync(); await transaction.CommitAsync();
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             TempData["Success"] = decision == "Accepted" ? "Job offer accepted! Awaiting client confirmation." : "Job offer declined.";
             return RedirectToAction("JobConfirmations");
         }
 
-        // ── LEAVE JOB (resignation) ───────────────────────────────────────────────
+        // ── LEAVE JOB (RN LeaveJobScreen: handles ResignationPending + multiple jobs) ──
         [HttpGet]
-        public async Task<IActionResult> LeaveJob()
+        public async Task<IActionResult> LeaveJob(int? interviewId = null)
         {
             int workerId = WorkerId;
-            var active = await _context.Interviews
+            await _workflow.ProcessDueAsync(workerId: workerId);
+
+            var activeRows = await _context.Interviews.AsNoTracking()
                 .Include(i => i.Client)
                 .Where(i => i.WorkerId == workerId &&
                             i.WorkerDecision != "Rejected" &&
                             i.Status != "Rejected" && i.Status != "JobRejected" &&
-                            i.Status != "Completed" && i.Status != "Terminated" && i.Status != "Resigned")
-                .GroupJoin(_context.Hiring.Where(h => h.HiringDecision == "Accepted"),
-                    i => i.InterviewId, h => h.InterviewId,
-                    (i, hg) => new { Interview = i, HasAccepted = hg.Any() })
-                .Where(x => x.HasAccepted || x.Interview.Status == "Approved" ||
-                            x.Interview.Status == "Finalized" || x.Interview.Status == "Hired" || x.Interview.Status == "Accepted")
-                .OrderByDescending(x => x.Interview.InterviewId)
-                .Select(x => new ActiveJobVM
+                            i.Status != "Completed" && i.Status != "Terminated" && i.Status != "Resigned" &&
+                            _context.Hiring.Any(h => h.InterviewId == i.InterviewId && h.HiringDecision == "Accepted"))
+                .OrderBy(i => i.Status == "ResignationPending" ? 1 : 0)
+                .ThenByDescending(i => i.InterviewId)
+                .Select(i => new ActiveJobVM
                 {
-                    InterviewId = x.Interview.InterviewId,
-                    ClientName = x.Interview.Client != null ? x.Interview.Client.Name : "Employer",
-                    Address = x.Interview.Client != null ? (x.Interview.Client.Address ?? "N/A") : "N/A",
-                    JobType = x.Interview.JobType ?? "Full-Time",
-                    IsExclusive = x.Interview.IsExclusive && x.Interview.JobType == "Full-Time"
+                    InterviewId = i.InterviewId,
+                    ClientName = i.Client != null ? i.Client.Name : "Employer",
+                    ClientPicture = i.Client != null ? i.Client.Picture : null,
+                    Address = i.Address ?? (i.Client != null ? (i.Client.Address ?? "N/A") : "N/A"),
+                    JobType = i.JobType ?? "Full-Time",
+                    Status = i.Status ?? "Finalized",
+                    IsExclusive = i.IsExclusive && i.JobType == "Full-Time",
+                    IsResignationPending = i.Status == "ResignationPending",
+                    NoticeEndsAt = _context.Resignations
+                        .Where(r => r.InterviewId == i.InterviewId)
+                        .OrderByDescending(r => r.ResignationId)
+                        .Select(r => r.NoticeEndsAtUtc != null ? r.NoticeEndsAtUtc.Value.ToString("dd MMM yyyy HH:mm 'UTC'") : null)
+                        .FirstOrDefault()
                 })
-                .FirstOrDefaultAsync();
+                .ToListAsync();
 
-            return View(active);
+            ViewBag.AllActiveJobs = activeRows;
+            var selected = interviewId.HasValue
+                ? activeRows.FirstOrDefault(j => j.InterviewId == interviewId.Value) ?? activeRows.FirstOrDefault()
+                : activeRows.FirstOrDefault();
+
+            return View(selected);
         }
 
         [HttpPost]
@@ -412,20 +650,21 @@ namespace FypWeb.Controllers
             try
             {
                 var notice = await _workflow.SubmitAsync(WorkerId, interviewId, resignationReason);
-                TempData["Success"] = $"Resignation submitted. The seven-day notice ends on {notice.LastWorkingDate:dd MMM yyyy}; the client may accept it earlier.";
+                TempData["Success"] = $"Resignation submitted. The seven-day notice ends on {notice.LastWorkingDate:dd MMM yyyy}; you can review your client after acceptance.";
             }
             catch (ResignationWorkflowException ex) { TempData["Error"] = ex.Message; }
             return RedirectToAction("Dashboard");
         }
 
-        // ── TERMINATION VIEW (client fired the worker) ────────────────────────────
+        // ── TERMINATION VIEW (RN WorkerTerminationScreen) ─────────────────────────
         public async Task<IActionResult> Termination(int? terminationId)
         {
             int workerId = WorkerId;
             var termination = await _context.Terminations
                 .Include(t => t.Interview).ThenInclude(i => i!.Client)
-                .Where(t => t.Interview!.WorkerId == workerId && (!terminationId.HasValue || t.TerminationId == terminationId.Value))
+                .Where(t => t.Interview != null && t.Interview.WorkerId == workerId && (!terminationId.HasValue || t.TerminationId == terminationId.Value))
                 .OrderByDescending(t => t.TerminatedDate)
+                .ThenByDescending(t => t.TerminationId)
                 .FirstOrDefaultAsync();
 
             if (termination == null) return View((object?)null);
@@ -433,9 +672,7 @@ namespace FypWeb.Controllers
             ViewBag.AlreadyReviewed = await _context.Reviews.AnyAsync(r =>
                 r.InterviewId == termination.InterviewId && r.ReviewerRole == "Worker");
 
-            // The client's criteria-scored closing review of this worker
-            // (RN WorkerTerminationScreen review card).
-            var reviewRow = await _context.Reviews
+            var reviewRow = await _context.Reviews.AsNoTracking()
                 .Where(r => r.InterviewId == termination.InterviewId && r.ReviewerRole == "Client")
                 .OrderByDescending(r => r.ReviewDate)
                 .Select(r => new
@@ -444,18 +681,24 @@ namespace FypWeb.Controllers
                     r.Comment,
                     r.ReviewDate,
                     ReviewerName = r.Interview!.Client != null ? r.Interview.Client.Name : "Client",
+                    ClientId = r.Interview.ClientId,
                     Criteria = r.ReviewCriteriaRatings
                         .OrderBy(c => c.Criteria.SortOrder).ThenBy(c => c.CriteriaId)
                         .Select(c => new CriteriaScoreVM { Name = c.Criteria.CriteriaName, Score = c.Score })
+                        .ToList(),
+                    SkillRatings = r.ReviewSkillRatings
+                        .OrderBy(s => s.Skill.SkillName).ThenBy(s => s.SkillsId)
+                        .Select(s => new CriteriaScoreVM { Name = s.Skill.SkillName ?? "Skill", Score = s.Score })
                         .ToList()
                 }).FirstOrDefaultAsync();
 
             if (reviewRow != null)
             {
-                var windows = await LoadContractWindowsAsync(
-                    new List<int> { termination.InterviewId ?? 0 },
-                    new Dictionary<int, DateTime?> { { termination.InterviewId ?? 0, reviewRow.ReviewDate } });
-                windows.TryGetValue(termination.InterviewId ?? 0, out var w);
+                var iid = termination.InterviewId ?? 0;
+                var windows = await ReviewHelpers.LoadContractWindowsAsync(_context,
+                    new List<int> { iid },
+                    new Dictionary<int, DateTime?> { { iid, reviewRow.ReviewDate } });
+                windows.TryGetValue(iid, out var w);
 
                 ViewBag.ClientReview = new ReviewVM
                 {
@@ -463,10 +706,14 @@ namespace FypWeb.Controllers
                     Comment = reviewRow.Comment,
                     ReviewerRole = "Client",
                     ReviewerName = reviewRow.ReviewerName ?? "Client",
+                    ReviewerClientId = reviewRow.ClientId,
                     ReviewDate = reviewRow.ReviewDate != null ? reviewRow.ReviewDate.Value.ToString("dd MMM yyyy") : "",
-                    WorkedPeriod = FormatWorkedPeriod(w.From, w.To),
+                    WorkedPeriod = ReviewHelpers.FormatWorkedPeriod(w.From, w.To),
                     EndType = "Terminated",
-                    Criteria = reviewRow.Criteria
+                    EndReasonType = w.EndReasonType ?? "Terminated",
+                    EndReason = w.EndReason ?? termination.TerminatedReason,
+                    Criteria = reviewRow.Criteria,
+                    SkillRatings = reviewRow.SkillRatings
                 };
             }
             return View(termination);
@@ -485,30 +732,57 @@ namespace FypWeb.Controllers
             return RedirectToAction("Termination");
         }
 
+        // ── POST-RESIGNATION CLIENT REVIEW (RN WorkerResignationReviewScreen) ──────
         [HttpGet]
         public async Task<IActionResult> ResignationReview(int id)
         {
             await _workflow.ProcessDueAsync(workerId: WorkerId);
-            var notice = await _context.Resignations.Include(r => r.Interview).ThenInclude(i => i!.Client)
+            var notice = await _context.Resignations.AsNoTracking()
+                .Include(r => r.Interview).ThenInclude(i => i!.Client)
                 .FirstOrDefaultAsync(r => r.ResignationId == id && r.Interview != null && r.Interview.WorkerId == WorkerId);
             if (notice?.Interview == null) return NotFound();
+
             var interviewId = notice.InterviewId ?? 0;
-            var rows = await _context.Reviews.Where(r => r.InterviewId == interviewId)
-                .OrderByDescending(r => r.ReviewDate).ToListAsync();
+            var rows = await _context.Reviews.AsNoTracking()
+                .Where(r => r.InterviewId == interviewId)
+                .OrderByDescending(r => r.ReviewDate)
+                .Select(r => new
+                {
+                    r.ReviewerRole,
+                    Rating = r.Rating ?? 0m,
+                    r.Comment,
+                    r.ReviewDate,
+                    Criteria = r.ReviewCriteriaRatings
+                        .OrderBy(c => c.Criteria.SortOrder).ThenBy(c => c.CriteriaId)
+                        .Select(c => new CriteriaScoreVM { Name = c.Criteria.CriteriaName, Score = c.Score })
+                        .ToList(),
+                    SkillRatings = r.ReviewSkillRatings
+                        .OrderBy(s => s.Skill.SkillName).ThenBy(s => s.SkillsId)
+                        .Select(s => new CriteriaScoreVM { Name = s.Skill.SkillName ?? "Skill", Score = s.Score })
+                        .ToList()
+                }).ToListAsync();
+
             var windows = await ReviewHelpers.LoadContractWindowsAsync(_context, new List<int> { interviewId },
-                rows.GroupBy(r => r.InterviewId ?? 0).ToDictionary(g => g.Key, g => g.Max(x => x.ReviewDate)));
+                rows.GroupBy(r => interviewId).ToDictionary(g => g.Key, g => g.Max(x => x.ReviewDate)));
             windows.TryGetValue(interviewId, out var window);
-            ReviewVM? Map(string role) => rows.Where(r => r.ReviewerRole == role).OrderByDescending(r => r.ReviewDate)
+
+            ReviewVM? Map(string role) => rows.Where(r => r.ReviewerRole == role)
                 .Select(r => new ReviewVM
                 {
-                    Rating = r.Rating ?? 0,
+                    Rating = r.Rating,
                     Comment = r.Comment,
                     ReviewerRole = role,
                     ReviewerName = role == "Client" ? notice.Interview.Client?.Name ?? "Client" : "You",
+                    ReviewerClientId = role == "Client" ? notice.Interview.ClientId : null,
                     ReviewDate = r.ReviewDate?.ToString("dd MMM yyyy") ?? "",
                     EndType = "Resigned",
-                    WorkedPeriod = ReviewHelpers.FormatWorkedPeriod(window.From, window.To)
+                    EndReasonType = window.EndReasonType ?? "Resigned",
+                    EndReason = window.EndReason ?? notice.ResignationReason,
+                    WorkedPeriod = ReviewHelpers.FormatWorkedPeriod(window.From, window.To),
+                    Criteria = r.Criteria,
+                    SkillRatings = r.SkillRatings
                 }).FirstOrDefault();
+
             var accepted = ResignationWorkflowService.IsAccepted(notice);
             var workerReview = Map("Worker");
             return View(new WorkerResignationReviewVM
@@ -579,14 +853,6 @@ namespace FypWeb.Controllers
         }
 
         // ── EDIT PROFILE ───────────────────────────────────────────────────────────
-        // Ported from the RN flow WorkerDashboardScreen → Signup (isEdit: true) →
-        // POST api/AccountCreation/UpdateWorker (NEW split contract):
-        //   • skillsJson      = [{ CategoryId, SkillsId }] → Worker_Category (full replace)
-        //   • experiencesJson = [{ WorkAt, ExpDetail, Duration }] → Experience (full replace)
-        //   • habitsJson semantics unchanged (empty = clear)
-        // Cnic is immutable (login key — the API never updates the column),
-        // photo/password optional in edit mode, and the RN edit form requires
-        // at least one sub-skill before saving.
         [HttpGet]
         public async Task<IActionResult> EditProfile()
         {
@@ -716,9 +982,6 @@ namespace FypWeb.Controllers
                 ExperiencesJson = "[]"
             };
 
-            // Existing skills = the Worker_Category junction rows (with names so
-            // the Add Skills screen can pre-tick chips and the form can show a
-            // summary) — mirrors the API's rawWorkerCategories.
             var skills = await (
                 from wc in _context.WorkerCategories.Where(wc => wc.WorkerId == worker.WorkerId)
                 join c in _context.Categories on wc.CategoryId equals c.CategoryId into cg
@@ -737,7 +1000,6 @@ namespace FypWeb.Controllers
 
             model.SkillsJson = JsonConvert.SerializeObject(skills);
 
-            // Existing experiences — work history only.
             var experiences = await _context.Experiences
                 .Where(e => e.WorkerId == worker.WorkerId)
                 .OrderBy(e => e.ExperienceId)
@@ -752,8 +1014,6 @@ namespace FypWeb.Controllers
             return model;
         }
 
-        // Re-issues the auth cookie after a profile edit so the sidebar shows
-        // the new name/photo without a re-login (same claims as Account/Login).
         private async Task RefreshSignInAsync(int workerId, string? name, string? picture, string? storedPassword)
         {
             var claims = new List<Claim>
@@ -772,35 +1032,45 @@ namespace FypWeb.Controllers
                 new AuthenticationProperties { IsPersistent = true });
         }
 
-        // ── NOTIFICATIONS: synchronized history, unread state, pagination, and deep links ──
+        // ── NOTIFICATIONS (RN WorkerNotificationsScreen: all 7 types, pagination, mark all read) ──
         [HttpGet]
         public async Task<IActionResult> Notifications(int skip = 0, int take = 30, DateTime? snapshotAtUtc = null)
         {
             await _notifications.SynchronizeAsync(WorkerId);
-            skip = Math.Max(0, skip); take = Math.Clamp(take, 1, 100);
+            skip = Math.Max(0, skip);
+            take = Math.Clamp(take, 1, 100);
             var snapshot = snapshotAtUtc ?? DateTime.UtcNow;
             var query = _context.WorkerNotifications.AsNoTracking()
                 .Where(n => n.WorkerId == WorkerId && n.CreatedAtUtc <= snapshot);
+            var totalCount = await query.CountAsync();
             var rows = await query.OrderByDescending(n => n.CreatedAtUtc).ThenByDescending(n => n.NotificationKey)
-                .Skip(skip).Take(take + 1).ToListAsync();
-            var hasMore = rows.Count > take;
-            rows = rows.Take(take).ToList();
+                .Skip(skip).Take(take).ToListAsync();
+
             return View(new WorkerNotificationPageVM
             {
-                Items = rows.Select(n => new WorkerNotificationVM
+                Items = rows.Select(n =>
                 {
-                    Key = n.NotificationKey,
-                    Type = n.Type,
-                    Title = n.Title,
-                    Message = n.Message,
-                    CreatedAtUtc = n.CreatedAtUtc,
-                    ReadAtUtc = n.ReadAtUtc,
-                    DestinationUrl = NotificationDestination(n)
+                    var meta = NotificationMeta(n.Type);
+                    return new WorkerNotificationVM
+                    {
+                        Key = n.NotificationKey,
+                        Type = n.Type,
+                        Title = n.Title,
+                        Message = n.Message,
+                        CreatedAtUtc = n.CreatedAtUtc,
+                        ReadAtUtc = n.ReadAtUtc,
+                        DestinationUrl = NotificationDestination(n),
+                        BadgeLabel = meta.Label,
+                        BadgeIcon = meta.Icon,
+                        BadgeColor = meta.Color,
+                        BadgeBackground = meta.Bg
+                    };
                 }).ToList(),
-                UnreadCount = await query.CountAsync(n => n.ReadAtUtc == null),
+                UnreadCount = await _context.WorkerNotifications.CountAsync(n => n.WorkerId == WorkerId && n.ReadAtUtc == null),
+                TotalCount = totalCount,
                 Skip = skip,
                 Take = take,
-                HasMore = hasMore,
+                HasMore = skip + rows.Count < totalCount,
                 SnapshotAtUtc = snapshot
             });
         }
@@ -834,9 +1104,22 @@ namespace FypWeb.Controllers
             var unread = await _context.WorkerNotifications.Where(n => n.WorkerId == WorkerId &&
                 n.ReadAtUtc == null && n.CreatedAtUtc <= snapshotAtUtc).ToListAsync();
             foreach (var item in unread) item.ReadAtUtc = now;
-            await _context.SaveChangesAsync();
+            if (unread.Count > 0) await _context.SaveChangesAsync();
+            TempData["Success"] = unread.Count > 0 ? $"Marked {unread.Count} notification(s) as read." : "All loaded notifications are already read.";
             return RedirectToAction("Notifications", new { skip, snapshotAtUtc });
         }
+
+        private static (string Label, string Icon, string Color, string Bg) NotificationMeta(string? type) => type switch
+        {
+            "interview" => ("Interview", "bi-calendar-check", "#1E64D3", "#EFF6FF"),
+            "job" => ("Job Offer", "bi-briefcase", "#047857", "#ECFDF5"),
+            "termination" => ("Contract Ended", "bi-file-earmark-x", "#DC2626", "#FEF2F2"),
+            "resignation" => ("Resignation", "bi-file-earmark-check", "#7C3AED", "#F5F3FF"),
+            "company-certificate" => ("Company Certificate", "bi-award", "#1E64D3", "#EFF6FF"),
+            "course-certificate" => ("Course Certificate", "bi-mortarboard", "#6D28D9", "#F5F3FF"),
+            "police-certificate" => ("Police Certificate", "bi-shield-check", "#0F766E", "#ECFDF5"),
+            _ => ("Alert", "bi-bell", "#475569", "#F1F5F9")
+        };
 
         private string? NotificationDestination(WorkerNotification item) => item.Type switch
         {
@@ -844,12 +1127,15 @@ namespace FypWeb.Controllers
             "job" => Url.Action("JobConfirmations", "Worker", new { hiringId = item.SourceId }),
             "termination" => Url.Action("Termination", "Worker", new { terminationId = item.SourceId }),
             "resignation" => Url.Action("ResignationReview", "Worker", new { id = item.SourceId }),
+            "company-certificate" => Url.Action("WorkerCertificates", "Worker"),
+            "course-certificate" => item.SourceId > 0
+                ? Url.Action("Certificate", "Worker", new { id = item.SourceId })
+                : Url.Action("WorkerCertificates", "Worker"),
+            "police-certificate" => Url.Action("CharacterCertificate", "Worker"),
             _ => null
         };
 
         // ── COURSES: CATALOGUE (RN WorkerCourseCatalogueScreen) ─────────────────────
-        // GET api/worker/courses — published, non-deleted courses that have not
-        // ended, with this worker's enrollment status for the button state.
         public async Task<IActionResult> Courses(string? search)
         {
             int workerId = WorkerId;
@@ -879,7 +1165,6 @@ namespace FypWeb.Controllers
             return View(rows);
         }
 
-        // POST api/worker/courses/{id}/enroll
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Enroll(int courseId)
@@ -912,7 +1197,6 @@ namespace FypWeb.Controllers
         }
 
         // ── COURSES: MY COURSES (RN WorkerMyCoursesScreen) ──────────────────────────
-        // GET api/worker/enrollments?status=
         public async Task<IActionResult> MyCourses(string? status)
         {
             int workerId = WorkerId;
@@ -937,7 +1221,6 @@ namespace FypWeb.Controllers
             return View(rows);
         }
 
-        // POST api/worker/enrollments/{id}/withdraw
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Withdraw(int enrollmentId)
@@ -962,7 +1245,6 @@ namespace FypWeb.Controllers
         }
 
         // ── COURSES: DIGITAL CERTIFICATE (RN CourseCertificateScreen) ───────────────
-        // GET api/course-certificates/{id} — role-scoped: a worker sees only own.
         public async Task<IActionResult> Certificate(int id)
         {
             int workerId = WorkerId;
@@ -1003,7 +1285,8 @@ namespace FypWeb.Controllers
             if (dto.Value && await _rules.HasActiveExclusiveFullTimeJobAsync(WorkerId))
                 return Json(new { ok = false, message = "Availability is locked while your exclusive full-time job is active." });
             worker.AvailableStatus = dto.Value;
-            await _context.SaveChangesAsync(); await transaction.CommitAsync();
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return Json(new { ok = true, isAvailable = worker.AvailableStatus });
         }
 
@@ -1054,7 +1337,8 @@ namespace FypWeb.Controllers
                 i.Status != "ResignationPending" && i.Status != "Completed");
             if (reserved) return Json(new { ok = false, message = "A reserved slot cannot be removed until its contract ends." });
             slot.IsActive = false;
-            await _context.SaveChangesAsync(); await transaction.CommitAsync();
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return Json(new { ok = true });
         }
 
@@ -1066,7 +1350,8 @@ namespace FypWeb.Controllers
                 return Json(new { ok = false, message = "Enter valid latitude and longitude coordinates." });
             var worker = await _context.Workers.FindAsync(WorkerId);
             if (worker == null) return Json(new { ok = false, message = "Worker not found." });
-            worker.Latitude = (decimal)dto.Latitude; worker.Longitude = (decimal)dto.Longitude;
+            worker.Latitude = (decimal)dto.Latitude;
+            worker.Longitude = (decimal)dto.Longitude;
             await _context.SaveChangesAsync();
             return Json(new { ok = true });
         }

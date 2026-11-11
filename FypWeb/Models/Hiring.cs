@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Fyp_Backend.Models
 {
     [Table("Hiring")]
-    public partial class Hiring
+    public class Hiring
     {
         [Key]
         [Column("Hiring_id")]
@@ -14,21 +14,19 @@ namespace Fyp_Backend.Models
         [Column("interview_id")]
         public int? InterviewId { get; set; }
 
+        [ForeignKey("InterviewId")]
+        public Interview? Interview { get; set; }
+
         [Column("WorkerDecision")]
-        [StringLength(50)]
         public string? WorkerDecision { get; set; }
 
         [Column("Hiring_Decision")]
-        [StringLength(50)]
         public string? HiringDecision { get; set; }
 
         [Column("Address")]
         public string? Address { get; set; }
 
-        [Column("Hiring_Date")]
+        [Column("HiringDate")] // <-- Yeh lazmi hona chahiye
         public DateTime? HiringDate { get; set; }
-
-        [ForeignKey("InterviewId")]
-        public virtual Interview? Interview { get; set; }
     }
 }

@@ -5,46 +5,64 @@
     int certified = ViewBag.CertifiedCount ?? 0;
     int uncertified = ViewBag.UncertifiedCount ?? 0;
     string searchCnic = ViewBag.SearchCnic as string ?? "";
+    string activeTab = ViewBag.ActiveTab as string ?? "uncertified";
 }
 
 <div class="page-head">
-    <h1>Character Verification Portal</h1>
-    <p>Issue and renew police character certificates for domestic workers.</p>
+    <h1>Police Verification Portal</h1>
+    <p>Verify CNIC identity and issue or renew 5-year character certificates for domestic workers.</p>
 </div>
 
 <div class="row g-3 mb-4">
+    <div class="col-sm-4">
+        <div class="card-soft stat-card">
+            <div class="stat-icon amber"><i class="bi bi-exclamation-circle"></i></div>
+            <div><div class="stat-num">@uncertified</div><div class="stat-label">Uncertified</div></div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="card-soft stat-card">
+            <div class="stat-icon green"><i class="bi bi-patch-check-fill"></i></div>
+            <div><div class="stat-num">@certified</div><div class="stat-label">Certified</div></div>
+        </div>
+    </div>
     <div class="col-sm-4">
         <div class="card-soft stat-card">
             <div class="stat-icon blue"><i class="bi bi-people-fill"></i></div>
             <div><div class="stat-num">@total</div><div class="stat-label">Total Workers</div></div>
         </div>
     </div>
-    <div class="col-sm-4">
-        <div class="card-soft stat-card">
-            <div class="stat-icon green"><i class="bi bi-patch-check-fill"></i></div>
-            <div><div class="stat-num">@certified</div><div class="stat-label">Verified</div></div>
-        </div>
-    </div>
-    <div class="col-sm-4">
-        <div class="card-soft stat-card">
-            <div class="stat-icon amber"><i class="bi bi-exclamation-circle"></i></div>
-            <div><div class="stat-num">@uncertified</div><div class="stat-label">Unverified</div></div>
-        </div>
-    </div>
+</div>
+
+<!-- Uncertified | Certified | All Filter Tabs (RN PoliceVerificationPortal parity) -->
+<div class="d-flex gap-2 flex-wrap mb-3">
+    <a asp-action="Portal" asp-route-tab="uncertified" asp-route-searchCnic="@searchCnic"
+       class="btn @(activeTab == "uncertified" ? "btn-primary" : "btn-outline-secondary") rounded-pill px-3">
+        <i class="bi bi-shield-exclamation me-1"></i>Uncertified (@uncertified)
+    </a>
+    <a asp-action="Portal" asp-route-tab="certified" asp-route-searchCnic="@searchCnic"
+       class="btn @(activeTab == "certified" ? "btn-success" : "btn-outline-secondary") rounded-pill px-3">
+        <i class="bi bi-shield-check me-1"></i>Certified (@certified)
+    </a>
+    <a asp-action="Portal" asp-route-tab="all" asp-route-searchCnic="@searchCnic"
+       class="btn @(activeTab == "all" ? "btn-dark" : "btn-outline-secondary") rounded-pill px-3">
+        All (@total)
+    </a>
 </div>
 
 <div class="card-soft mb-4">
     <div class="card-body">
         <form method="get" asp-action="Portal" class="row g-2">
+            <input type="hidden" name="tab" value="@activeTab" />
             <div class="col-md-9">
                 <div class="input-group">
                     <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                    <input type="text" name="searchCnic" value="@searchCnic" class="form-control" placeholder="Search by CNIC" />
+                    <input type="text" name="searchCnic" value="@searchCnic" class="form-control" placeholder="Search worker by CNIC (e.g. 37405-...)" />
                 </div>
             </div>
             <div class="col-md-3 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1">Search</button>
-                <a asp-action="Portal" class="btn btn-outline-secondary">Reset</a>
+                <a asp-action="Portal" asp-route-tab="@activeTab" class="btn btn-outline-secondary">Reset</a>
             </div>
         </form>
     </div>
@@ -53,9 +71,14 @@
 @if (!Model.Any())
 {
     <div class="card-soft">
-        <div class="empty-state">
-            <i class="bi bi-search"></i>
-            <h5 class="mt-3">No workers found</h5>
+        <div class="empty-state py-5 text-center text-muted">
+            <i class="bi bi-shield-check" style="font-size:2.4rem;opacity:.45;"></i>
+            <h5 class="mt-3">No workers in this tab</h5>
+            <p class="small mb-0">
+                @(activeTab == "uncertified"
+                    ? "All matching workers currently hold valid character certificates."
+                    : "No certified workers matched your CNIC filter.")
+            </p>
         </div>
     </div>
 }
@@ -81,24 +104,30 @@ else
                             <div>
                                 <div class="fw-bold">@w.Name</div>
                                 <div class="text-muted small">@w.Category</div>
-                                <div class="text-muted small"><i class="bi bi-person-badge me-1"></i>@w.Cnic</div>
+                                <div class="text-muted small font-monospace"><i class="bi bi-person-badge me-1"></i>@w.Cnic</div>
                             </div>
                         </div>
                         <div class="mt-3">
                             @if (w.IsCertified)
                             {
-                                <span class="chip chip-green"><i class="bi bi-patch-check-fill me-1"></i>Verified</span>
+                                <span class="chip chip-green"><i class="bi bi-patch-check-fill me-1"></i>Police Verified</span>
                                 <div class="text-muted small mt-1">Valid until @w.CertExpiry</div>
                             }
                             else
                             {
-                                <span class="chip chip-amber"><i class="bi bi-exclamation-circle me-1"></i>Not verified</span>
+                                <span class="chip chip-amber"><i class="bi bi-exclamation-circle me-1"></i>Uncertified / Expired</span>
                             }
                         </div>
-                        <div class="mt-auto pt-3">
-                            <a asp-action="WorkerDetail" asp-route-id="@w.Id" class="btn btn-primary w-100">
-                                <i class="bi bi-shield-check me-1"></i>@(w.IsCertified ? "View / Renew" : "Verify Now")
+                        <div class="mt-auto pt-3 d-flex gap-2">
+                            <a asp-action="WorkerDetail" asp-route-id="@w.Id" class="btn btn-primary flex-grow-1">
+                                <i class="bi bi-shield-check me-1"></i>@(w.IsCertified ? "Renew / Update" : "Issue Certificate")
                             </a>
+                            @if (w.IsCertified)
+                            {
+                                <a asp-action="CharacterCertificate" asp-route-id="@w.Id" class="btn btn-outline-secondary" title="Preview official certificate">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            }
                         </div>
                     </div>
                 </div>

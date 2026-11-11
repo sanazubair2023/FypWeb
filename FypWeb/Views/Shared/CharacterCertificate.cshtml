@@ -1,0 +1,165 @@
+﻿@* RN Police/CharacterCertificateScreen.js — Read-only Police Character Certificate view
+   shared across Client, Worker, and Police. *@
+@model CharacterCertificateVM
+@{
+    ViewData["Title"] = "Police Character Certificate";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+    string bannerBg = Model.Status == "Verified" ? "#15803D"
+                    : Model.Status == "Expired" ? "#B45309"
+                    : "#475569";
+    string bannerBadge = Model.Status == "Verified" ? "POLICE VERIFIED"
+                       : Model.Status == "Expired" ? "CERTIFICATE EXPIRED"
+                       : "NOT CERTIFIED";
+    string bannerSub = Model.Status == "Verified" ? "Active 5-year character clearance verified by law enforcement"
+                     : Model.Status == "Expired" ? "Previously issued certificate has passed its validity date"
+                     : "No police character certificate has been issued for this worker yet";
+    string bannerIcon = Model.Status == "Verified" ? "bi-shield-fill-check"
+                      : Model.Status == "Expired" ? "bi-exclamation-triangle-fill"
+                      : "bi-shield-slash";
+    string backController = Model.ViewerRole == "Worker" ? "Worker"
+                          : Model.ViewerRole == "Police" ? "Police"
+                          : "Client";
+    string backAction = Model.ViewerRole == "Worker" ? "Dashboard" : "WorkerDetail";
+}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    @if (Model.ViewerRole == "Worker")
+    {
+        <a asp-controller="Worker" asp-action="Dashboard" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+    }
+    else
+    {
+        <a asp-controller="@backController" asp-action="@backAction" asp-route-id="@Model.WorkerId" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+    }
+    <div>
+        <h1 class="h4 mb-0 fw-bold">Police Character Certificate</h1>
+        <small class="text-muted">Official law-enforcement background verification record</small>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card-soft overflow-hidden">
+            <!-- Status Banner -->
+            <div class="p-4 text-white text-center" style="background:@bannerBg;">
+                <div class="mx-auto mb-2 d-grid" style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.18);place-items:center;font-size:1.9rem;">
+                    <i class="bi @bannerIcon"></i>
+                </div>
+                <div class="fw-bold" style="letter-spacing:1.4px;font-size:.82rem;">@bannerBadge</div>
+                <h2 class="h5 fw-bold mt-1 mb-1">Police Character Certificate</h2>
+                <div class="small" style="opacity:.9;">@bannerSub</div>
+            </div>
+
+            <div class="card-body p-4">
+                <!-- Worker Identity Strip -->
+                <div class="d-flex align-items-center gap-3 p-3 rounded-3 mb-4" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                    @if (pic != null)
+                    {
+                        <img src="@pic" alt="@Model.Name" style="width:56px;height:56px;border-radius:50%;object-fit:cover;"
+                             onerror="this.style.display='none';this.nextElementSibling.style.display='grid';" />
+                        <div class="wc-avatar-fallback" style="width:56px;height:56px;border-radius:50%;display:none;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                    }
+                    else
+                    {
+                        <div class="wc-avatar-fallback" style="width:56px;height:56px;border-radius:50%;">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
+                    }
+                    <div class="flex-grow-1">
+                        <div class="fw-bold fs-5">@Model.Name</div>
+                        @if (!string.IsNullOrWhiteSpace(Model.Cnic))
+                        {
+                            <div class="text-muted small"><i class="bi bi-person-vcard me-1"></i>CNIC: <span class="font-monospace">@Model.Cnic</span></div>
+                        }
+                    </div>
+                </div>
+
+                @if (Model.Status == "NotIssued")
+                {
+                    <div class="text-center py-4">
+                        <i class="bi bi-shield-exclamation text-muted" style="font-size:2.5rem;"></i>
+                        <h3 class="h6 fw-bold mt-3">No Certificate Issued Yet</h3>
+                        <p class="text-muted small mb-0 mx-auto" style="max-width:440px;">
+                            @(Model.ViewerRole == "Worker"
+                                ? "Visit your local police station with your original CNIC to have a verified 5-year Character Certificate issued to your profile."
+                                : "This worker has not yet received a police character certificate on the platform.")
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    @if (Model.Status == "Expired")
+                    {
+                        <div class="alert alert-warning d-flex align-items-start gap-2 mb-3">
+                            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+                            <div class="small">
+                                <strong>Expired Certificate:</strong> This character certificate expired on <strong>@Model.ExpiryDate</strong> and needs renewal by a police verification officer.
+                            </div>
+                        </div>
+                    }
+                    else if (Model.DaysUntilExpiry.HasValue && Model.DaysUntilExpiry.Value <= 60 && Model.DaysUntilExpiry.Value >= 0)
+                    {
+                        <div class="alert alert-info d-flex align-items-start gap-2 mb-3">
+                            <i class="bi bi-clock-history mt-1"></i>
+                            <div class="small">
+                                <strong>Upcoming Renewal:</strong> This certificate expires in <strong>@Model.DaysUntilExpiry.Value day(s)</strong> (@Model.ExpiryDate).
+                            </div>
+                        </div>
+                    }
+
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                <div class="text-muted small">Certificate Number</div>
+                                <div class="fw-bold font-monospace mt-1">@(Model.CertificateNo ?? "N/A")</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                <div class="text-muted small">Character Status</div>
+                                <div class="fw-bold text-success mt-1"><i class="bi bi-check-circle-fill me-1"></i>@(Model.CharacterStatus ?? "Verified")</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                <div class="text-muted small">Issued Date</div>
+                                <div class="fw-bold mt-1"><i class="bi bi-calendar-check me-1 text-primary"></i>@(Model.IssuedDate ?? "N/A")</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                <div class="text-muted small">Valid Until</div>
+                                <div class="fw-bold mt-1 @(Model.Status == "Expired" ? "text-danger" : "")">
+                                    <i class="bi bi-calendar-event me-1"></i>@(Model.ExpiryDate ?? "N/A")
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                <div class="text-muted small">Issuing Police Station</div>
+                                <div class="fw-bold mt-1"><i class="bi bi-building me-1 text-secondary"></i>@(string.IsNullOrWhiteSpace(Model.IssuingStation) ? "Police Verification Desk" : Model.IssuingStation)</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                <div class="text-muted small">Verifying Officer Badge</div>
+                                <div class="fw-bold font-monospace mt-1"><i class="bi bi-person-badge me-1 text-secondary"></i>@(string.IsNullOrWhiteSpace(Model.IssuingBadge) ? "Verified Officer" : Model.IssuingBadge)</div>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(Model.Remarks))
+                        {
+                            <div class="col-12">
+                                <div class="p-3 rounded-3" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                                    <div class="text-muted small mb-1">Official Officer Remarks</div>
+                                    <div style="font-size:.9rem;color:#334155;">@Model.Remarks</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>

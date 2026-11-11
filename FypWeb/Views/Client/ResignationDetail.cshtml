@@ -3,9 +3,20 @@
     ViewData["Title"] = "Resignation Detail";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerAvatar);
     int idx = 0;
+    int sIdx = 0;
+    int remDays = Math.Clamp(Model.RemainingDays, 0, 7);
+    int elapsedPct = Math.Clamp((int)Math.Round(((7 - remDays) / 7.0) * 100), 0, 100);
 }
 
-<a asp-action="Resignations" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to resignations</a>
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+    <a asp-action="Resignations" class="btn btn-link px-0 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to resignations</a>
+    @if (Model.IsConfirmed)
+    {
+        <a asp-action="ContractSummary" asp-route-workerId="@Model.WorkerId" asp-route-interviewId="@Model.InterviewId" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-file-earmark-text me-1"></i>Contract Exit Summary
+        </a>
+    }
+</div>
 
 <div class="row g-3">
     <div class="col-lg-7">
@@ -28,6 +39,24 @@
                     </div>
                     <span class="chip @(Model.IsConfirmed ? "chip-green" : "chip-amber")">@(Model.IsConfirmed ? "Accepted" : "Notice pending")</span>
                 </div>
+
+                @if (!Model.IsConfirmed)
+                {
+                    <div class="p-3 rounded-3 mt-3" style="background:#FFFBEB;border:1px solid #FDE68A;">
+                        <div class="d-flex align-items-center justify-content-between small fw-semibold mb-1" style="color:#92400E;">
+                            <span><i class="bi bi-hourglass-split me-1"></i>7-Day Notice Period</span>
+                            <span>@remDays day@(remDays == 1 ? "" : "s") remaining</span>
+                        </div>
+                        <div class="progress" style="height:7px;background:#FEF3C7;">
+                            <div class="progress-bar bg-warning" role="progressbar" style="width:@elapsedPct%;"></div>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(Model.NoticeEndsAt))
+                        {
+                            <div class="small text-muted mt-1">Auto-accepts on <strong>@Model.NoticeEndsAt</strong> if not accepted earlier.</div>
+                        }
+                    </div>
+                }
+
                 <hr />
                 <dl class="row small mb-0">
                     <dt class="col-sm-4">Reason</dt>
@@ -68,17 +97,17 @@
         }
     </div>
 
-    @* ── Acceptance and/or criteria review input ── *@
+    @* ── Acceptance and/or criteria + skill review input ── *@
     <div class="col-lg-5">
         @if (Model.ClientReview == null)
         {
             <div class="card-soft">
                 <div class="card-body">
                     <h6 class="fw-bold"><i class="bi bi-clipboard-check me-1 text-brand"></i>@(Model.IsConfirmed ? "Complete your closing review" : "Accept resignation & leave a review")</h6>
-                    <p class="text-muted small">@(Model.IsConfirmed ? "The resignation is already accepted. Rate every criterion and save your remarks; do not confirm it again." : "Accepting ends the contract immediately. Otherwise it is accepted automatically at the seven-day deadline.")</p>
+                    <p class="text-muted small">@(Model.IsConfirmed ? "The resignation is already accepted. Rate every criterion and hired skill below to publish your review." : "Accepting ends the contract immediately. Otherwise it is accepted automatically at the 7-day deadline.")</p>
                     @if (!Model.CriteriaGroups.Any())
                     {
-                        <div class="alert alert-warning py-2 small"><i class="bi bi-info-circle me-1"></i>No review criteria are configured. Apply <code>Database/FypWeb_Parity_Upgrade.sql</code> before closing this review.</div>
+                        <div class="alert alert-warning py-2 small"><i class="bi bi-info-circle me-1"></i>No review criteria are configured. Run <code>Database/FypWeb_SharedDb_Migration.sql</code> before closing this review.</div>
                     }
                     else
                     {
@@ -86,7 +115,8 @@
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="interviewId" value="@Model.InterviewId" />
                             <input type="hidden" name="resignationId" value="@Model.ResignationId" />
-                            <div class="fw-semibold small mb-2">Rate every criterion <span class="text-danger">*</span></div>
+
+                            <div class="fw-semibold small mb-1">Common Criteria <span class="text-danger">*</span></div>
                             @foreach (var g in Model.CriteriaGroups)
                             {
                                 <div class="crit-group-title">@g.GroupName</div>
@@ -106,6 +136,28 @@
                                     idx++;
                                 }
                             }
+
+                            @if (Model.SelectedSkills != null && Model.SelectedSkills.Any())
+                            {
+                                <div class="fw-semibold small mt-3 mb-1">Hired Job Skills <span class="text-danger">*</span></div>
+                                <div class="crit-group-title" style="color:#0F766E;">SELECTED CONTRACT SKILLS</div>
+                                @foreach (var sk in Model.SelectedSkills)
+                                {
+                                    <div class="crit-row">
+                                        <input type="hidden" name="skillScores[@sIdx].SkillsId" value="@sk.SkillsId" />
+                                        <span class="crit-name fw-semibold">@sk.Name</span>
+                                        <span class="crit-stars" data-sidx="@sIdx">
+                                            @for (int score = 1; score <= 5; score++)
+                                            {
+                                                <input type="radio" class="d-none" name="skillScores[@sIdx].Score" value="@score" id="rsk_@(sIdx)_@(score)" required="@(score == 1)" />
+                                                <label for="rsk_@(sIdx)_@(score)" class="crit-star" title="@score star@(score > 1 ? "s" : "")"><i class="bi bi-star"></i></label>
+                                            }
+                                        </span>
+                                    </div>
+                                    sIdx++;
+                                }
+                            }
+
                             <label class="form-label fw-semibold mt-3">Remarks <span class="text-danger">*</span></label>
                             <textarea name="comment" class="form-control" rows="3" maxlength="4000" placeholder="Your remarks about working with @Model.WorkerName" required></textarea>
                             <button type="submit" class="btn btn-primary w-100 mt-3" onclick="return confirm('@(Model.IsConfirmed ? "Save this closing review?" : "Accept this resignation and save your review?")');">
@@ -122,7 +174,10 @@
                 <div class="card-body text-center py-4">
                     <i class="bi bi-check-circle text-success" style="font-size:2rem;"></i>
                     <div class="fw-bold mt-2">Resignation accepted and reviewed</div>
-                    <div class="text-muted small">This contract and both closing actions are complete.</div>
+                    <div class="text-muted small mb-3">This contract and both closing actions are complete.</div>
+                    <a asp-action="ContractSummary" asp-route-workerId="@Model.WorkerId" asp-route-interviewId="@Model.InterviewId" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-file-earmark-text me-1"></i>View Contract Summary
+                    </a>
                 </div>
             </div>
         }

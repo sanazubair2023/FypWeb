@@ -1,0 +1,165 @@
+﻿@* RN Client/WorkerCertificateRecordDetail.js — Full certificate record view
+   with official seal, course period/duration, evaluation notes, syllabus bullets, and code. *@
+@model WorkerCertificateRecordVM
+@{
+    var viewerRole = ViewBag.ViewerRole as string ?? "Client";
+    bool isCourse = Model.CertificateType == "CourseCompletion";
+    ViewData["Title"] = $"{Model.CertificateTitle} · Certificate Record";
+    var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.WorkerPicture);
+}
+
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2">
+        @if (viewerRole == "Worker")
+        {
+            <a asp-controller="Worker" asp-action="WorkerCertificates" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+        }
+        else
+        {
+            <a asp-controller="Client" asp-action="WorkerCertificates" asp-route-id="@Model.WorkerId" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+        }
+        <div>
+            <h1 class="h4 mb-0 fw-bold">Certificate Record</h1>
+            <small class="text-muted">@(isCourse ? "Verified Course-Completion Certificate" : "Verified Company Skill Certification")</small>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.CertificateCode))
+    {
+        <a asp-controller="Home" asp-action="VerifyCertificate" asp-route-code="@Model.CertificateCode" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-patch-check me-1"></i>Public Verification Page
+        </a>
+    }
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card-soft p-4" style="border:2px solid #1E64D3;">
+            <!-- Official Seal Header -->
+            <div class="text-center pb-4 mb-4" style="border-bottom:1px dashed #CBD5E1;">
+                <div class="mx-auto mb-3 d-grid" style="width:76px;height:76px;border-radius:50%;background:#EFF6FF;color:#1E64D3;place-items:center;font-size:2.1rem;border:2px solid #BFDBFE;">
+                    <i class="bi @(isCourse ? "bi-mortarboard-fill" : "bi-award-fill")"></i>
+                </div>
+                <div class="fw-bold text-primary" style="letter-spacing:1.6px;font-size:.78rem;">
+                    @(isCourse ? "CERTIFICATE OF COURSE COMPLETION" : "OFFICIAL SKILL EVALUATION CERTIFICATE")
+                </div>
+                <div class="text-muted small mt-2">This certifies that</div>
+
+                <div class="d-inline-flex align-items-center gap-2 mt-2 px-3 py-2 rounded-pill" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                    @if (pic != null)
+                    {
+                        <img src="@pic" alt="@Model.WorkerName" style="width:34px;height:34px;border-radius:50%;object-fit:cover;"
+                             onerror="this.style.display='none';" />
+                    }
+                    <span class="fw-bold fs-5 text-dark">@Model.WorkerName</span>
+                </div>
+
+                <div class="text-muted small mt-3">
+                    @(isCourse ? "has successfully completed the training programme" : "has been evaluated and certified in")
+                </div>
+                <h2 class="h4 fw-bold text-primary mt-1 mb-2">@Model.CertificateTitle</h2>
+                <div class="fw-semibold text-secondary">
+                    <i class="bi bi-building me-1"></i>Issued by @Model.CompanyName
+                </div>
+            </div>
+
+            <!-- Metadata Grid -->
+            <div class="row g-3 mb-4">
+                <div class="col-sm-6">
+                    <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                        <div class="text-muted small">Issued Date</div>
+                        <div class="fw-bold mt-1"><i class="bi bi-calendar-check text-primary me-1"></i>@Model.IssuedDate</div>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(Model.CompletionDate))
+                {
+                    <div class="col-sm-6">
+                        <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                            <div class="text-muted small">Completion Date</div>
+                            <div class="fw-bold mt-1"><i class="bi bi-check2-circle text-success me-1"></i>@Model.CompletionDate</div>
+                        </div>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Model.CourseStartDate) && !string.IsNullOrWhiteSpace(Model.CourseEndDate))
+                {
+                    <div class="col-sm-6">
+                        <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                            <div class="text-muted small">Course Period</div>
+                            <div class="fw-bold mt-1">@Model.CourseStartDate – @Model.CourseEndDate</div>
+                        </div>
+                    </div>
+                }
+
+                @if (Model.DurationDays.HasValue)
+                {
+                    <div class="col-sm-6">
+                        <div class="p-3 rounded-3 h-100" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                            <div class="text-muted small">Programme Duration</div>
+                            <div class="fw-bold mt-1"><i class="bi bi-hourglass-split text-primary me-1"></i>@Model.DurationDays.Value @(Model.DurationDays.Value == 1 ? "Day" : "Days") (inclusive)</div>
+                        </div>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Model.CertificateCode))
+                {
+                    <div class="col-12">
+                        <div class="p-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style="background:#EFF6FF;border:1px solid #BFDBFE;">
+                            <div>
+                                <div class="small text-primary fw-semibold">Verification Code</div>
+                                <div class="fw-bold font-monospace fs-6 text-dark">@Model.CertificateCode</div>
+                            </div>
+                            <span class="chip chip-green"><i class="bi bi-shield-check"></i>Authentic Digital Record</span>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Evaluation Notes / Course Description -->
+            @if (!string.IsNullOrWhiteSpace(Model.EvaluationNotes))
+            {
+                <div class="mb-3">
+                    <h3 class="h6 fw-bold mb-2"><i class="bi bi-clipboard-data text-primary me-1"></i>Training Evaluation Notes</h3>
+                    <div class="p-3 rounded-3" style="background:#F8FAFC;border:1px solid #E2E8F0;white-space:pre-line;font-size:.9rem;color:#334155;">@Model.EvaluationNotes</div>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Model.CourseDescription))
+            {
+                <div class="mb-3">
+                    <h3 class="h6 fw-bold mb-2"><i class="bi bi-journal-text text-primary me-1"></i>Course Overview</h3>
+                    <div class="p-3 rounded-3" style="background:#F8FAFC;border:1px solid #E2E8F0;white-space:pre-line;font-size:.9rem;color:#334155;">@Model.CourseDescription</div>
+                </div>
+            }
+
+            @if (Model.SyllabusItems != null && Model.SyllabusItems.Count > 0)
+            {
+                <div class="mb-3">
+                    <h3 class="h6 fw-bold mb-2"><i class="bi bi-list-check text-primary me-1"></i>Covered Syllabus &amp; Competencies</h3>
+                    <div class="p-3 rounded-3" style="background:#F8FAFC;border:1px solid #E2E8F0;">
+                        <ul class="mb-0 ps-3" style="font-size:.9rem;color:#334155;">
+                            @foreach (var item in Model.SyllabusItems)
+                            {
+                                <li class="mb-1">@item</li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Model.CertificateUrl))
+            {
+                <div class="text-end mt-3">
+                    <a href="@Model.CertificateUrl" target="_blank" rel="noopener noreferrer" class="btn btn-brand btn-sm">
+                        <i class="bi bi-download me-1"></i>Open Attached Certificate File
+                    </a>
+                </div>
+            }
+        </div>
+    </div>
+</div>

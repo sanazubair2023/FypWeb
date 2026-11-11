@@ -127,15 +127,30 @@ namespace FypWeb.Controllers
             { TempData["Error"] = "Worker not found."; return RedirectToAction("Directory"); }
             try
             {
-                _context.WorkerCertifications.Add(new WorkerCertification
+                await using var tx = await _context.Database.BeginTransactionAsync();
+                var certification = new WorkerCertification
                 {
                     WorkerID = workerId,
                     CompanyID = CompanyId,
                     CertificateTitle = certificateTitle.Trim(),
                     TrainingEvaluationNotes = trainingEvaluationNotes?.Trim() ?? "",
                     IssuedDate = DateTime.Now
+                };
+                _context.WorkerCertifications.Add(certification);
+                await _context.SaveChangesAsync();
+
+                _context.WorkerNotifications.Add(new WorkerNotification
+                {
+                    WorkerId = certification.WorkerID,
+                    NotificationKey = $"company-certificate:{certification.CertificationID}",
+                    Type = "company-certificate",
+                    SourceId = certification.WorkerID,
+                    Title = "Company certificate issued",
+                    Message = $"Your company-issued certificate \"{certification.CertificateTitle}\" is available in your certificates.",
+                    CreatedAtUtc = DateTime.UtcNow
                 });
                 await _context.SaveChangesAsync();
+                await tx.CommitAsync();
                 TempData["Success"] = "Certificate issued and published successfully!";
             }
             catch (Exception ex)
@@ -373,6 +388,8 @@ namespace FypWeb.Controllers
             }
             if (enrollment.Certificate != null)
             {
+                await EnsureCourseCertificateNotificationAsync(enrollment.Certificate, enrollment.Course.CourseName);
+                await tx.CommitAsync();
                 TempData["Success"] = "Already completed.";
                 return RedirectToAction("CourseDetail", new { id = enrollment.CourseID });
             }
@@ -405,6 +422,7 @@ namespace FypWeb.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                await EnsureCourseCertificateNotificationAsync(certificate, enrollment.Course.CourseName);
                 await tx.CommitAsync();
             }
             catch (DbUpdateException ex)
@@ -417,6 +435,26 @@ namespace FypWeb.Controllers
 
             TempData["Success"] = "Worker completed the course and certificate " + code + " was issued.";
             return RedirectToAction("CourseDetail", new { id = enrollment.CourseID });
+        }
+
+        private async Task EnsureCourseCertificateNotificationAsync(CourseCertificate certificate, string courseName)
+        {
+            var key = $"course-certificate:{certificate.CertificateID}";
+            if (await _context.WorkerNotifications.AnyAsync(n =>
+                    n.WorkerId == certificate.WorkerID && n.NotificationKey == key))
+                return;
+
+            _context.WorkerNotifications.Add(new WorkerNotification
+            {
+                WorkerId = certificate.WorkerID,
+                NotificationKey = key,
+                Type = "course-certificate",
+                SourceId = certificate.CertificateID,
+                Title = "Course certificate issued",
+                Message = $"Your course-completion certificate for {courseName} is ready to view.",
+                CreatedAtUtc = certificate.IssuedDateUtc
+            });
+            await _context.SaveChangesAsync();
         }
 
         // DELETE api/company/courses/{id} — hard delete when no enrollments,

@@ -1,0 +1,54 @@
+﻿@* RN helpers/SkillRatingsGroup.js — Category header + average + per-sub-skill rating rows.
+   Model: (string CategoryName, double? AverageRating, int RatingCount, List<SkillRatingRowVM> Skills, bool IsPrimary) *@
+@model (string CategoryName, double? AverageRating, int RatingCount, List<SkillRatingRowVM> Skills, bool IsPrimary)
+@{
+    bool catRated = Model.RatingCount > 0 && Model.AverageRating.HasValue;
+    string catSummary = catRated
+        ? $"{Model.AverageRating!.Value:F1}/5 · {Model.RatingCount} {(Model.RatingCount == 1 ? "rating" : "ratings")}"
+        : "Not rated";
+}
+<div class="rounded-3 p-3 mb-3" style="background:#FFFFFF;border:1px solid #E2E8F0;">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 pb-2 mb-2" style="border-bottom:1px solid #F1F5F9;">
+        <div class="d-flex align-items-center gap-2">
+            <span class="d-inline-grid" style="width:28px;height:28px;border-radius:8px;background:@(Model.IsPrimary ? "#EFF6FF" : "#F5F3FF");color:@(Model.IsPrimary ? "#1E64D3" : "#7C3AED");place-items:center;">
+                <i class="bi @(Model.IsPrimary ? "bi-award-fill" : "bi-layers-fill")"></i>
+            </span>
+            <div>
+                <div class="fw-bold" style="font-size:.92rem;color:#0F172A;">@Model.CategoryName</div>
+                <div style="font-size:.7rem;color:#64748B;">@(Model.IsPrimary ? "Primary Profession" : "Additional / Part-Time Category")</div>
+            </div>
+        </div>
+        <span class="d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill"
+              style="background:@(catRated ? "#FEF9C3" : "#F1F5F9");color:@(catRated ? "#854D0E" : "#64748B");font-size:.75rem;font-weight:700;">
+            <i class="bi @(catRated ? "bi-star-fill text-warning" : "bi-star")"></i>
+            @catSummary
+        </span>
+    </div>
+
+    @if (Model.Skills == null || Model.Skills.Count == 0)
+    {
+        <div class="text-muted small py-1">No sub-skills listed in this category yet.</div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-1">
+            @foreach (var skill in Model.Skills)
+            {
+                bool rated = skill.RatingCount > 0 && skill.AverageRating.HasValue;
+                string summary = rated
+                    ? $"{skill.AverageRating!.Value:F1}/5 · {skill.RatingCount} {(skill.RatingCount == 1 ? "rating" : "ratings")}"
+                    : "Not rated";
+                <div class="d-flex align-items-center justify-content-between py-1 px-2 rounded-2" style="background:#F8FAFC;">
+                    <span class="d-flex align-items-center gap-2" style="font-size:.84rem;color:#1E293B;font-weight:500;">
+                        <i class="bi bi-check2-circle text-primary"></i>
+                        @skill.Name
+                    </span>
+                    <span class="d-inline-flex align-items-center gap-1" style="font-size:.76rem;color:@(rated ? "#0F172A" : "#94A3B8");font-weight:@(rated ? "700" : "500");">
+                        <i class="bi @(rated ? "bi-star-fill text-warning" : "bi-star")"></i>
+                        @summary
+                    </span>
+                </div>
+            }
+        </div>
+    }
+</div>

@@ -121,10 +121,6 @@ public partial class AccountController : Controller
         }, CookieAuthenticationDefaults.AuthenticationScheme);
     }
 
-    [HttpGet]
-    [Authorize]
-    public IActionResult AccessDenied() => View();
-
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout()
@@ -366,5 +362,13 @@ public partial class AccountController : Controller
     {
         return Json(await _context.Skills.Where(s => s.CategoryId == categoryId)
             .Select(s => new { s.SkillsId, s.SkillName }).ToListAsync());
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public IActionResult AccessDenied(string? returnUrl = null)
+    {
+        ViewBag.ReturnUrl = Url.IsLocalUrl(returnUrl) ? returnUrl : null;
+        return View();
     }
 }

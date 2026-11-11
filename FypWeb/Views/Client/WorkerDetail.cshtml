@@ -34,7 +34,9 @@
                         <i class="bi @(i <= Math.Round(Model.Rating) ? "bi-star-fill" : "bi-star")"></i>
                     }
                     <span class="text-dark fw-semibold ms-1">@Model.Rating.ToString("F1")</span>
-                    <span class="text-muted small">(@Model.ReviewCount reviews)</span>
+                    <a asp-action="WorkerReviews" asp-route-id="@Model.Id" class="text-muted small text-decoration-underline ms-1">
+                        (@Model.ReviewCount review@(Model.ReviewCount == 1 ? "" : "s"))
+                    </a>
                 </div>
                 <div class="d-flex flex-wrap justify-content-center gap-1 mb-3">
                     @foreach (var c in Model.Categories)
@@ -96,7 +98,6 @@
                     {
                         if (!string.IsNullOrWhiteSpace(contractStatus))
                         {
-
                             <div class="small text-muted mb-2">@contractStatus</div>
                         }
                         <a asp-action="BookInterview" asp-route-workerId="@Model.Id" asp-route-allowNonExclusive="@Model.IsExclusiveFullTime" class="btn btn-primary w-100">
@@ -109,6 +110,7 @@
     </div>
 
     <div class="col-lg-8">
+        <!-- Trust & Verification -->
         <div class="card-soft mb-3">
             <div class="card-body">
                 <h6 class="fw-bold mb-3"><i class="bi bi-shield-lock me-1 text-brand"></i>Trust &amp; Verification</h6>
@@ -118,7 +120,7 @@
                     var pBorder = pStatus == "Verified" ? "border-success" : (pStatus == "Expired" ? "border-warning" : "border-danger");
                 }
                 <div class="border @pBorder rounded p-3 mb-3">
-                    <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
                         <i class="bi bi-shield-@(pStatus == "Verified" ? "check text-success" : (pStatus == "Expired" ? "exclamation text-warning" : "x text-danger"))" style="font-size:1.3rem;"></i>
                         <div class="flex-grow-1">
                             <div class="fw-bold">Criminal Background Check</div>
@@ -146,10 +148,11 @@
                             <div class="col-sm-6"><span class="text-muted">Badge:</span> <strong>@Model.PoliceIssuingBadge</strong></div>
                             <div class="col-sm-6"><span class="text-muted">Issued:</span> <strong>@Model.PoliceIssuedDate</strong></div>
                             <div class="col-sm-6"><span class="text-muted">Expires:</span> <strong>@Model.PoliceExpiryDate</strong></div>
-                            @if (!string.IsNullOrWhiteSpace(Model.PoliceRemarks))
-                            {
-                                <div class="col-12"><span class="text-muted">Remarks:</span> @Model.PoliceRemarks</div>
-                            }
+                        </div>
+                        <div class="mt-2">
+                            <a asp-action="CharacterCertificate" asp-route-id="@Model.Id" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-file-earmark-check me-1"></i>View Official Character Certificate
+                            </a>
                         </div>
                     }
                     else
@@ -158,36 +161,36 @@
                     }
                 </div>
 
-                @if (Model.HasVerifiedTraining)
+                @if (Model.HasVerifiedTraining || Model.TotalCertificateCount > 0)
                 {
                     <div class="border border-info rounded p-3" style="background:#F0F9FF;">
-                        <div class="d-flex align-items-center gap-2 mb-1">
+                        <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
                             <i class="bi bi-patch-check-fill text-brand" style="font-size:1.3rem;"></i>
                             <div class="flex-grow-1">
-                                <div class="fw-bold">Verified Training</div>
+                                <div class="fw-bold">Verified Training &amp; Skill Certificates</div>
                                 <div class="small text-muted">
-                                    @if (Model.TrainingIsCourse)
-                                    {
-                                        <text>Course completion certificate</text>
-                                    }
-                                    else
-                                    {
-                                        <text>Company-issued skill certificate</text>
-                                    }
+                                    @(Model.TotalCertificateCount > 0
+                                        ? $"{Model.TotalCertificateCount} verified certificate(s) on record"
+                                        : (Model.TrainingIsCourse ? "Course completion certificate" : "Company-issued skill certificate"))
                                 </div>
                             </div>
-                            @if (Model.TrainingIsCourse)
-                            {
-                                <span class="chip chip-blue">Certified</span>
-                            }
+                            <span class="chip chip-blue">Certified</span>
                         </div>
-                        <div class="bg-white rounded p-2 mt-2">
-                            <div class="fw-semibold">@Model.TrainingTitle</div>
-                            <div class="small text-muted">Certified by @(Model.TrainingCompany ?? "Verified Company") · @Model.TrainingIssuedDate</div>
-                            @if (Model.TrainingIsCourse && !string.IsNullOrEmpty(Model.TrainingCode))
-                            {
-                                <div class="small mt-1"><i class="bi bi-award me-1 text-brand"></i>Certificate code: <span class="fw-semibold">@Model.TrainingCode</span></div>
-                            }
+                        @if (!string.IsNullOrWhiteSpace(Model.TrainingTitle))
+                        {
+                            <div class="bg-white rounded p-2 mt-2">
+                                <div class="fw-semibold">@Model.TrainingTitle</div>
+                                <div class="small text-muted">Certified by @(Model.TrainingCompany ?? "Verified Company") · @Model.TrainingIssuedDate</div>
+                                @if (Model.TrainingIsCourse && !string.IsNullOrEmpty(Model.TrainingCode))
+                                {
+                                    <div class="small mt-1"><i class="bi bi-award me-1 text-brand"></i>Certificate code: <span class="fw-semibold">@Model.TrainingCode</span></div>
+                                }
+                            </div>
+                        }
+                        <div class="mt-2">
+                            <a asp-action="WorkerCertificates" asp-route-id="@Model.Id" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-award me-1"></i>View All Certificates (@Model.TotalCertificateCount)
+                            </a>
                         </div>
                     </div>
                 }
@@ -212,6 +215,34 @@
                 <div class="card-body">
                     <h6 class="fw-bold"><i class="bi bi-person-lines-fill me-1 text-brand"></i>About</h6>
                     <p class="mb-0 text-muted">@Model.Bio</p>
+                </div>
+            </div>
+        }
+
+        <!-- Skills & Verified Skill Ratings Breakdown (RN WorkerDetailScreen parity) -->
+        @if (Model.PrimarySkillRatings.Any() || Model.PartTimeSkills.Any())
+        {
+            var ratedSkillsTotal = Model.PrimarySkillRatings.Count(s => s.RatingCount > 0)
+                                 + Model.PartTimeSkills.Sum(g => g.SkillRatings.Count(s => s.RatingCount > 0));
+            var primaryTuple = (Model.PrimaryRole, Model.PrimaryCategoryAverageRating, Model.PrimaryCategoryRatingCount, Model.PrimarySkillRatings, true);
+            <div class="card-soft mb-3">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h6 class="fw-bold mb-0"><i class="bi bi-tools me-1 text-brand"></i>Offered Skills &amp; Client Ratings</h6>
+                        @if (ratedSkillsTotal > 0)
+                        {
+                            <span class="chip chip-blue">@ratedSkillsTotal skill@(ratedSkillsTotal == 1 ? "" : "s") rated</span>
+                        }
+                    </div>
+                    @if (Model.PrimarySkillRatings.Any())
+                    {
+                        <partial name="_SkillRatingsGroup" model="primaryTuple" />
+                    }
+                    @foreach (var g in Model.PartTimeSkills)
+                    {
+                        var ptTuple = (g.CategoryName, g.AverageRating, g.RatingCount, g.SkillRatings, false);
+                        <partial name="_SkillRatingsGroup" model="ptTuple" />
+                    }
                 </div>
             </div>
         }
@@ -288,14 +319,22 @@
 
         <div class="card-soft">
             <div class="card-body">
-                <h6 class="fw-bold"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Reviews (@Model.ReviewCount)</h6>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Reviews (@Model.ReviewCount)</h6>
+                    @if (Model.ReviewCount > 0)
+                    {
+                        <a asp-action="WorkerReviews" asp-route-id="@Model.Id" class="btn btn-sm btn-outline-primary">
+                            See Full Breakdown
+                        </a>
+                    }
+                </div>
                 @if (!Model.Reviews.Any())
                 {
                     <p class="text-muted mb-0">No reviews yet.</p>
                 }
                 else
                 {
-                    foreach (var r in Model.Reviews)
+                    foreach (var r in Model.Reviews.Take(5))
                     {
                         <partial name="_ReviewCard" model="r" />
                     }

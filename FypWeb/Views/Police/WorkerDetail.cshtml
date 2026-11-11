@@ -2,9 +2,24 @@
 @{
     ViewData["Title"] = "Character Verification";
     var pic = FypWeb.Helpers.ViewHelpers.Pic(Model.Picture);
+    var presetStatuses = new[]
+    {
+        "Clear - No Record",
+        "Good Character",
+        "Verified - Satisfactory"
+    };
+    var currentStatus = Model.CharacterStatus ?? "Clear - No Record";
 }
 
-<a asp-action="Portal" class="btn btn-link px-0 mb-2 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to portal</a>
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <a asp-action="Portal" class="btn btn-link px-0 text-brand"><i class="bi bi-arrow-left me-1"></i>Back to portal</a>
+    @if (Model.CertificateNo != null)
+    {
+        <a asp-action="CharacterCertificate" asp-route-id="@Model.WorkerId" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-file-earmark-check me-1"></i>View Official Certificate
+        </a>
+    }
+</div>
 
 <div class="row g-3">
     <div class="col-lg-5">
@@ -20,7 +35,7 @@
                     <div class="detail-avatar-fallback mb-3 mx-auto">@FypWeb.Helpers.ViewHelpers.Initial(Model.Name)</div>
                 }
                 <h4 class="fw-bold mb-1">@Model.Name</h4>
-                <div class="text-muted small mb-2"><i class="bi bi-person-badge me-1"></i>@Model.Cnic</div>
+                <div class="text-muted small mb-2 font-monospace"><i class="bi bi-person-badge me-1"></i>@Model.Cnic</div>
                 @if (Model.Status == "Verified")
                 {
                     <span class="chip chip-green"><i class="bi bi-patch-check-fill me-1"></i>Verified</span>
@@ -37,12 +52,12 @@
                 @if (Model.CertificateNo != null)
                 {
                     <div class="p-3 bg-light rounded text-start mt-3 small">
-                        <div class="mb-1"><strong>Certificate No:</strong> @Model.CertificateNo</div>
-                        <div class="mb-1"><strong>Status:</strong> @Model.CharacterStatus</div>
+                        <div class="mb-1"><strong>Certificate No:</strong> <span class="font-monospace">@Model.CertificateNo</span></div>
+                        <div class="mb-1"><strong>Character Status:</strong> @Model.CharacterStatus</div>
                         <div class="mb-1"><strong>Issuing Station:</strong> @Model.IssuingStation</div>
-                        <div class="mb-1"><strong>Badge:</strong> @Model.IssuingBadge</div>
+                        <div class="mb-1"><strong>Officer Badge:</strong> @Model.IssuingBadge</div>
                         <div class="mb-1"><strong>Issued:</strong> @Model.IssuedDate</div>
-                        <div><strong>Expires:</strong> @Model.ExpiryDate</div>
+                        <div><strong>Valid Until:</strong> @Model.ExpiryDate</div>
                         @if (!string.IsNullOrWhiteSpace(Model.Remarks))
                         {
                             <div class="mt-2"><strong>Remarks:</strong> @Model.Remarks</div>
@@ -56,10 +71,14 @@
     <div class="col-lg-7">
         <div class="card-soft">
             <div class="card-body">
-                <h6 class="fw-bold"><i class="bi bi-shield-check me-1 text-brand"></i>@(Model.HasValidCertificate ? "Renew" : "Issue") Character Certificate</h6>
+                <h6 class="fw-bold mb-3">
+                    <i class="bi bi-shield-check me-1 text-brand"></i>@(Model.CertificateNo != null ? "Renew / Update" : "Issue") Character Certificate
+                </h6>
                 @if (Model.HasValidCertificate)
                 {
-                    <div class="alert alert-info py-2 small"><i class="bi bi-info-circle me-1"></i>This worker already holds a valid certificate. Submitting will renew it for another 5 years.</div>
+                    <div class="alert alert-info py-2 small">
+                        <i class="bi bi-info-circle me-1"></i>This worker already holds an active certificate. Submitting will renew it for 5 years from today and notify the worker.
+                    </div>
                 }
                 <form asp-action="IssueCertificate" method="post">
                     @Html.AntiForgeryToken()
@@ -68,37 +87,42 @@
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Character Status</label>
                         <select name="characterStatus" class="form-select" required>
-                            <option value="">Select status</option>
-                            <option value="Clear">Clear — No criminal record</option>
-                            <option value="Under Review">Under Review</option>
-                            <option value="Flagged">Flagged — Concerns noted</option>
+                            @foreach (var opt in presetStatuses)
+                            {
+                                <option value="@opt" selected="@(string.Equals(currentStatus, opt, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@opt</option>
+                            }
+                            @if (!presetStatuses.Any(p => string.Equals(p, currentStatus, StringComparison.OrdinalIgnoreCase)) && !string.IsNullOrWhiteSpace(Model.CharacterStatus))
+                            {
+                                <option value="@Model.CharacterStatus" selected="selected">@Model.CharacterStatus</option>
+                            }
                         </select>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Certificate No <span class="text-muted small">(optional — auto-generated if blank)</span></label>
-                        <input type="text" name="certificateNo" class="form-control" placeholder="Leave blank to auto-generate" />
+                        <input type="text" name="certificateNo" class="form-control font-monospace"
+                               value="@Model.CertificateNo" placeholder="e.g. CC-@Model.WorkerId-@DateTime.Now.ToString("yyyyMMdd")" />
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Verified CNIC</label>
-                        <input type="text" name="verifiedCnic" class="form-control" value="@Model.Cnic" />
+                        <input type="text" name="verifiedCnic" class="form-control font-monospace" value="@Model.Cnic" required />
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Remarks (optional)</label>
-                        <textarea name="remarks" class="form-control" rows="3" placeholder="Any additional notes"></textarea>
+                        <label class="form-label fw-semibold">Officer Remarks (optional)</label>
+                        <textarea name="remarks" class="form-control" rows="3" placeholder="Verification findings or station notes">@Model.Remarks</textarea>
                     </div>
 
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="cnicVerified" value="true" id="cnicCheck" required />
                         <label class="form-check-label fw-semibold" for="cnicCheck">
-                            I confirm I have physically verified this worker's CNIC.
+                            I confirm I have verified this worker's original CNIC against NADRA / station records.
                         </label>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-patch-check me-1"></i>@(Model.HasValidCertificate ? "Renew Certificate" : "Issue Certificate")
+                        <i class="bi bi-patch-check me-1"></i>@(Model.CertificateNo != null ? "Renew Character Certificate (5 Years)" : "Issue Character Certificate (5 Years)")
                     </button>
                 </form>
             </div>

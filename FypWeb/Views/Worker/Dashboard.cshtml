@@ -71,6 +71,40 @@
 @* ───────────────────────── OVERVIEW ───────────────────────── *@
 <div class="wdk-pane" data-pane="Overview">
 
+    <!-- Pending Client Reviews Banner (RN WorkerDashboardScreen parity) -->
+    @if (Model.PendingClientReviews != null && Model.PendingClientReviews.Any())
+    {
+        <div class="card-soft mb-3" style="border-color:#FDBA74;background:#FFFBEB;">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="bi bi-star-half text-warning fs-5"></i>
+                    <div class="fw-bold" style="color:#92400E;">
+                        Pending Client Review@(Model.PendingClientReviews.Count == 1 ? "" : "s") (@Model.PendingClientReviews.Count)
+                    </div>
+                </div>
+                <div class="small text-muted mb-2">
+                    Your resignation was accepted. Leave a closing review for your former client:
+                </div>
+                <div class="d-flex flex-column gap-2">
+                    @foreach (var pr in Model.PendingClientReviews)
+                    {
+                        <div class="d-flex align-items-center justify-content-between gap-2 bg-white rounded-3 p-2 border">
+                            <div>
+                                <div class="fw-semibold small">@pr.ClientName</div>
+                                <div class="text-muted" style="font-size:.74rem;">
+                                    @(pr.AcceptedAtUtc.HasValue ? $"Accepted {pr.AcceptedAtUtc.Value:dd MMM yyyy}" : "Resignation accepted")
+                                </div>
+                            </div>
+                            <a asp-action="ResignationReview" asp-route-id="@pr.ResignationId" class="btn btn-sm btn-warning fw-semibold">
+                                Rate Client
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- Course shortcuts — first, exactly like the RN overview -->
     <div class="row g-3 mb-3">
         <div class="col-md-6">
@@ -91,6 +125,48 @@
                         <i class="bi bi-award text-brand" style="font-size:1.6rem;"></i>
                         <div class="fw-bold mt-2">My Learning</div>
                         <small class="text-muted">Courses and certificates</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Trust & Official Certificates Quick Cards (RN WorkerDashboardScreen parity) -->
+    <div class="row g-3 mb-3">
+        <div class="col-md-6">
+            <a asp-action="CharacterCertificate" class="text-decoration-none h-100 d-block">
+                <div class="card-soft h-100">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="wdk-icon-circle" style="background:#ECFDF5;color:#10B981;">
+                            <i class="bi bi-shield-check"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-bold text-dark small">Police Character Certificate</div>
+                            <div class="text-muted" style="font-size:.75rem;">
+                                @(Model.PoliceCertStatus == "Verified"
+                                    ? $"Verified · Valid until {Model.PoliceExpiryDate}"
+                                    : (Model.PoliceCertStatus == "Expired" ? "Certificate expired" : "Not issued yet"))
+                            </div>
+                        </div>
+                        <span class="chip @(Model.PoliceCertStatus == "Verified" ? "chip-green" : (Model.PoliceCertStatus == "Expired" ? "chip-amber" : "chip-gray"))">
+                            @Model.PoliceCertStatus
+                        </span>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-6">
+            <a asp-action="WorkerCertificates" class="text-decoration-none h-100 d-block">
+                <div class="card-soft h-100">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <div class="wdk-icon-circle" style="background:#EFF6FF;color:#2563EB;">
+                            <i class="bi bi-patch-check-fill"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-bold text-dark small">Verified Certificates</div>
+                            <div class="text-muted" style="font-size:.75rem;">Company skill &amp; course credentials</div>
+                        </div>
+                        <span class="chip chip-blue">@Model.TotalCertificateCount</span>
                     </div>
                 </div>
             </a>
@@ -230,60 +306,49 @@
         <div class="card-body">
             <div class="d-flex align-items-center gap-3 flex-wrap mb-3">
                 <div class="flex-grow-1">
-                    <h6 class="fw-bold mb-0"><i class="bi bi-award me-1 text-brand"></i>Professional Skills</h6>
-                    <small class="text-muted">Your primary and secondary service expertise</small>
+                    <h6 class="fw-bold mb-0"><i class="bi bi-award me-1 text-brand"></i>Professional Skills &amp; Client Ratings</h6>
+                    <small class="text-muted">Your primary and secondary service expertise with verified client scores</small>
                 </div>
                 <a asp-action="EditProfile" class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-pencil me-1"></i>Edit
+                    <i class="bi bi-pencil me-1"></i>Edit Skills
                 </a>
             </div>
             <hr />
 
-            <div class="small fw-bold mb-1">Primary Service</div>
-            <div class="text-muted small mb-2">Your main professional category</div>
-            <span class="chip text-white" style="background:#1565C0; padding:.45rem .9rem; font-size:.95rem;">@Model.PrimaryRole</span>
-
-            <div class="small fw-bold mt-4 mb-2">Primary Skills</div>
-            @if (Model.PrimarySkills.Any())
+            @if (Model.PrimarySkillRatings.Any() || Model.PartTimeSkills.Any())
             {
-                <div class="d-flex flex-wrap gap-2 mb-4">
-                    @foreach (var s in Model.PrimarySkills)
-                    {
-                        <span class="chip" style="background:#EAF3FF; border:1px solid #BFDBFE; color:#0D47A1;">
-                            <i class="bi bi-check-decagram me-1"></i>@s
-                        </span>
-                    }
-                </div>
-            }
-            else
-            {
-                <p class="text-muted small">No primary skills added.</p>
-            }
-
-            <hr />
-            <div class="small fw-bold mt-3 mb-1">Secondary / Part-Time Services</div>
-            <div class="text-muted small mb-2">Additional categories and services you can provide</div>
-            @if (Model.PartTimeSkills.Any())
-            {
-                foreach (var g in Model.PartTimeSkills)
+                @if (Model.PrimarySkillRatings.Any())
                 {
-                    <div class="rounded p-3 mb-2" style="background:#F8FAFC; border:1px solid #E2E8F0;">
-                        <div class="fw-bold small mb-2"><i class="bi bi-briefcase me-1 text-brand"></i>@g.CategoryName</div>
-                        <div class="d-flex flex-wrap gap-2">
-                            @foreach (var s in g.Skills)
-                            {
-                                <span class="chip" style="background:#fff; border:1px solid #D9E5F3; color:#475569;">@s</span>
-                            }
-                        </div>
-                    </div>
+                    var pTuple = (Model.PrimaryRole, Model.PrimaryCategoryAverageRating, Model.PrimaryCategoryRatingCount, Model.PrimarySkillRatings, true);
+                    <partial name="_SkillRatingsGroup" model="pTuple" />
+                }
+                @foreach (var g in Model.PartTimeSkills)
+                {
+                    var ptTuple = (g.CategoryName, g.AverageRating, g.RatingCount, g.SkillRatings, false);
+                    <partial name="_SkillRatingsGroup" model="ptTuple" />
                 }
             }
             else
             {
-                <div class="text-center py-4">
-                    <i class="bi bi-briefcase-off" style="font-size:2rem; color:#CBD5E1;"></i>
-                    <p class="text-muted small mt-2 mb-0">No secondary services added.</p>
-                </div>
+                <div class="small fw-bold mb-1">Primary Service</div>
+                <span class="chip text-white" style="background:#1565C0; padding:.45rem .9rem; font-size:.95rem;">@Model.PrimaryRole</span>
+
+                <div class="small fw-bold mt-4 mb-2">Primary Skills</div>
+                @if (Model.PrimarySkills.Any())
+                {
+                    <div class="d-flex flex-wrap gap-2 mb-4">
+                        @foreach (var s in Model.PrimarySkills)
+                        {
+                            <span class="chip" style="background:#EAF3FF; border:1px solid #BFDBFE; color:#0D47A1;">
+                                <i class="bi bi-check-decagram me-1"></i>@s
+                            </span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted small">No primary skills added.</p>
+                }
             }
         </div>
     </div>
@@ -368,11 +433,17 @@
         <div class="card-body">
             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <h6 class="fw-bold mb-0"><i class="bi bi-chat-square-quote me-1 text-brand"></i>Customer Reviews</h6>
-                <span class="wdk-rating-badge">
-                    <i class="bi bi-star-fill" style="color:#FFD700;"></i>
-                    <span class="fw-bold">@Model.Rating.ToString("F1")</span>
-                    <span class="text-muted small">(@Model.ReviewCount)</span>
-                </span>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="wdk-rating-badge">
+                        <i class="bi bi-star-fill" style="color:#FFD700;"></i>
+                        <span class="fw-bold">@Model.Rating.ToString("F1")</span>
+                        <span class="text-muted small">(@Model.ReviewCount)</span>
+                    </span>
+                    @if (Model.ReviewCount > 0)
+                    {
+                        <a asp-action="Reviews" class="btn btn-sm btn-outline-primary">Full Breakdown</a>
+                    }
+                </div>
             </div>
             <hr />
             @if (!Model.Reviews.Any())

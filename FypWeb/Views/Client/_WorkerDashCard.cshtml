@@ -27,7 +27,7 @@
             }
             <div class="flex-grow-1">
                 <div class="wdc-name">@Model.OtherPartyName</div>
-                <div class="wdc-caption">@caption</div>
+                <div class="wdc-caption">@(string.IsNullOrWhiteSpace(Model.CategoryName) ? caption : $"{Model.CategoryName} · {caption}")</div>
             </div>
             <span class="chip @pill">@Model.Status</span>
         </div>
@@ -44,6 +44,22 @@
             }
         </div>
 
+        @if (Model.SelectedSkills != null && Model.SelectedSkills.Any())
+        {
+            <div class="d-flex flex-wrap gap-1 mb-2">
+                @foreach (var sk in Model.SelectedSkills.Take(4))
+                {
+                    <span class="badge rounded-pill" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #DBEAFE;font-weight:600;font-size:.7rem;">
+                        @sk
+                    </span>
+                }
+                @if (Model.SelectedSkills.Count > 4)
+                {
+                    <span class="badge rounded-pill bg-light text-muted border" style="font-size:.7rem;">+@(Model.SelectedSkills.Count - 4)</span>
+                }
+            </div>
+        }
+
         <div class="wdc-loc">
             <i class="bi bi-geo-alt-fill"></i>
             <span class="text-truncate">@Model.Location</span>
@@ -57,8 +73,8 @@
 
         <div class="wdc-foot">
             <span class="wdc-rid"><i class="bi bi-hash"></i>Record @Model.InterviewId</span>
-            <div class="d-flex gap-2">
-                <a asp-action="WorkerDetail" asp-route-id="@Model.OtherPartyId" class="btn btn-outline-primary btn-sm">View</a>
+            <div class="d-flex flex-wrap gap-1">
+                <a asp-action="WorkerDetail" asp-route-id="@Model.OtherPartyId" class="btn btn-outline-primary btn-sm">Profile</a>
                 @if (Model.Status == "On Work")
                 {
                     <a asp-action="Terminate" asp-route-interviewId="@Model.InterviewId" class="btn btn-outline-danger btn-sm">Terminate</a>
@@ -66,6 +82,12 @@
                 @if (Model.ResignationId.HasValue && (Model.Status == "Pending Resignation" || Model.Status == "Resigned"))
                 {
                     <a asp-action="ResignationDetail" asp-route-id="@Model.ResignationId" class="btn btn-outline-primary btn-sm">Resignation</a>
+                }
+                @if (isPast)
+                {
+                    <a asp-action="ContractSummary" asp-route-workerId="@Model.OtherPartyId" asp-route-interviewId="@Model.InterviewId" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-file-text me-1"></i>Summary
+                    </a>
                 }
             </div>
         </div>
